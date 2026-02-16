@@ -1,5 +1,4 @@
 import { LevelData, TileType } from './Level';
-import { easeOutCubic } from './utils';
 
 export interface UiState {
   levelLabel: string;
@@ -7,14 +6,11 @@ export interface UiState {
   score: number;
   floodedTiles: number;
   totalTiles: number;
+  waterActive: boolean;
+  hasContainedArea: boolean;
   hoverX: number;
   hoverY: number;
   timeMs: number;
-}
-
-interface BuildAnim {
-  index: number;
-  startedAt: number;
 }
 
 export class Renderer {
@@ -30,7 +26,6 @@ export class Renderer {
   private gridSize = 24;
   private offsetX = 0;
   private offsetY = 0;
-  private readonly buildAnims: BuildAnim[] = [];
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -48,13 +43,6 @@ export class Renderer {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.width = rect.width;
     this.height = rect.height;
-  }
-
-  addBuildAnimation(index: number, now: number): void {
-    this.buildAnims.push({ index, startedAt: now });
-    if (this.buildAnims.length > 48) {
-      this.buildAnims.shift();
-    }
   }
 
   getUiActionAt(px: number, py: number): 'restart' | 'undo' | 'new' | null {
@@ -99,7 +87,7 @@ export class Renderer {
         const isBoundary = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
         this.drawTile(level.tiles[i], px, py, this.gridSize, flooded[i] === 1, isBoundary, ui.timeMs);
         if (levees[i] === 1) {
-          this.drawLevee(px, py, this.gridSize, this.getAnimScale(i, ui.timeMs));
+          this.drawLevee(px, py, this.gridSize);
         }
       }
     }
@@ -136,16 +124,23 @@ export class Renderer {
     ctx.font = '600 15px Inter, system-ui, sans-serif';
     ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
     ctx.font = '500 14px Inter, system-ui, sans-serif';
-    ctx.fillText(`Levees ${ui.placementsRemaining}`, 16, 45);
+    ctx.fillText(`Sandbags ${ui.placementsRemaining}`, 16, 45);
     ctx.fillText(`Score ${ui.score}`, 150, 45);
 
     const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
     ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
     ctx.fillText(`Flooded ${floodedPct}%`, 250, 45);
 
-    ctx.fillStyle = '#8fa8d9';
+    ctx.fillStyle = ui.waterActive ? '#6de8a5' : '#8fa8d9';
     ctx.font = '500 12px Inter, system-ui, sans-serif';
-    ctx.fillText('Hold the center dry while water pushes in from map edges.', 360, 45);
+    const status = ui.waterActive
+      ? 'Water is flowing in from map edges.'
+      : ui.placementsRemaining > 0
+        ? 'Place all sandbags to begin the flood.'
+        : ui.hasContainedArea
+          ? 'Contained basin found. Water starts now.'
+          : 'No contained area yet. Adjust sandbag layout.';
+    ctx.fillText(status, 360, 45);
   }
 
   private drawTile(
@@ -191,10 +186,10 @@ export class Renderer {
     }
   }
 
-  private drawLevee(x: number, y: number, size: number, scale: number): void {
+  private drawLevee(x: number, y: number, size: number): void {
     const ctx = this.ctx;
-    const w = size * 0.74 * scale;
-    const h = size * 0.36 * scale;
+    const w = size * 0.74;
+    const h = size * 0.36;
     const cx = x + size * 0.5;
     const cy = y + size * 0.55;
     ctx.fillStyle = '#d0b98d';
@@ -261,8 +256,8 @@ export class Renderer {
     const items = [
       { c: '#87b678', label: 'Dry land' },
       { c: '#53b8ff', label: 'Flooded water' },
-      { c: '#d0b98d', label: 'Levee' },
-      { c: '#85ceff', label: 'Outflow target' },
+      { c: '#d0b98d', label: 'Sandbag' },
+      { c: '#51586a', label: 'Mountain' },
     ];
 
     let x = 16;
@@ -274,7 +269,7 @@ export class Renderer {
       ctx.strokeRect(x, y, 12, 12);
       ctx.fillStyle = '#cdd8f3';
       ctx.fillText(items[i].label, x + 18, y + 10);
-      x += 140;
+      x += 130;
     }
   }
 
@@ -293,19 +288,4 @@ export class Renderer {
     }
   }
 
-  private getAnimScale(index: number, now: number): number {
-    for (let i = this.buildAnims.length - 1; i >= 0; i -= 1) {
-      const a = this.buildAnims[i];
-      if (a.index !== index) {
-        continue;
-      }
-      const elapsed = now - a.startedAt;
-      if (elapsed > 220) {
-        this.buildAnims.splice(i, 1);
-        return 1;
-      }
-      return easeOutCubic(Math.max(0, elapsed / 220));
-    }
-    return 1;
-  }
 }

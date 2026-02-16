@@ -15,12 +15,25 @@ export async function loadDailyLevel(dateKey = toDateKey()): Promise<LevelData> 
     const response = await fetch(`/levels/${dateKey}.json`);
     if (response.ok) {
       const raw = (await response.json()) as RawLevel;
-      return parseLevel(raw, dateKey);
+      return normalizeForSandbagFlow(parseLevel(raw, dateKey));
     }
   } catch {
     // fallback to generator
   }
-  return generateLevel(dateKey);
+  return normalizeForSandbagFlow(generateLevel(dateKey));
+}
+
+function normalizeForSandbagFlow(level: LevelData): LevelData {
+  const tiles = level.tiles.slice();
+  for (let i = 0; i < tiles.length; i += 1) {
+    if (tiles[i] === TileType.WATER || tiles[i] === TileType.OUTFLOW) {
+      tiles[i] = TileType.LAND;
+    }
+  }
+  return {
+    ...level,
+    tiles,
+  };
 }
 
 function generateLevel(dateKey: string): LevelData {
@@ -31,46 +44,41 @@ function generateLevel(dateKey: string): LevelData {
   const tiles = new Uint8Array(total);
   tiles.fill(TileType.LAND);
 
-  const riverX = rng.int(2, width - 2);
-  for (let y = 0; y < height; y += 1) {
-    const x = Math.max(1, Math.min(width - 2, riverX + Math.floor((rng.next() - 0.5) * 3)));
-    tiles[y * width + x] = TileType.WATER;
-    if (rng.next() < 0.45) {
-      const nx = Math.max(0, Math.min(width - 1, x + (rng.next() < 0.5 ? -1 : 1)));
-      tiles[y * width + nx] = TileType.WATER;
+  // strategic mountain clusters
+  const clusters = 4;
+  for (let c = 0; c < clusters; c += 1) {
+    const cx = rng.int(2, width - 2);
+    const cy = rng.int(2, height - 2);
+    const clusterSize = rng.int(4, 8);
+    for (let i = 0; i < clusterSize; i += 1) {
+      const x = Math.max(1, Math.min(width - 2, cx + rng.int(-1, 2)));
+      const y = Math.max(1, Math.min(height - 2, cy + rng.int(-1, 2)));
+      tiles[y * width + x] = TileType.ROCK;
     }
   }
 
-  for (let i = 0; i < 12; i += 1) {
-    const x = rng.int(0, width);
-    const y = rng.int(0, height);
-    const index = y * width + x;
-    if (tiles[index] === TileType.LAND) {
-      tiles[index] = TileType.ROCK;
+  // clear some guaranteed build area around the center target
+  const centerX = Math.floor(width / 2);
+  const centerY = Math.floor(height / 2);
+  for (let y = centerY - 2; y <= centerY + 2; y += 1) {
+    for (let x = centerX - 2; x <= centerX + 2; x += 1) {
+      tiles[y * width + x] = TileType.LAND;
     }
   }
 
-  const outflowY = rng.int(0, height);
-  tiles[outflowY * width + (width - 1)] = TileType.OUTFLOW;
-
-  const districts: LevelData['districts'] = [];
-  for (let i = 0; i < 22; i += 1) {
-    const x = rng.int(0, width);
-    const y = rng.int(0, height);
-    const tile = tiles[y * width + x];
-    if (tile !== TileType.LAND) {
-      continue;
-    }
-    const roll = rng.next();
-    const type = roll < 0.6 ? 'HOME' : roll < 0.8 ? 'HOSPITAL' : 'POWER_STATION';
-    districts.push({ type, x, y });
-  }
+  const districts: LevelData['districts'] = [
+    { type: 'HOME', x: centerX, y: centerY },
+    { type: 'HOSPITAL', x: centerX - 3, y: centerY - 2 },
+    { type: 'HOSPITAL', x: centerX + 3, y: centerY - 1 },
+    { type: 'HOSPITAL', x: centerX - 2, y: centerY + 3 },
+    { type: 'HOSPITAL', x: centerX + 2, y: centerY + 3 },
+  ];
 
   return {
     date: dateKey,
     width,
     height,
-    wallBudget: 12,
+    wallBudget: 14,
     tiles,
     districts,
   };
