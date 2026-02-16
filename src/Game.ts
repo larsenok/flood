@@ -270,7 +270,7 @@ export class Game {
       return this.displayedFlooded;
     }
     const elapsed = now - this.floodAnimStartMs;
-    const steps = Math.min(this.sim.floodOrder.length, Math.floor(elapsed / 14) + 1);
+    const steps = Math.min(this.sim.floodOrder.length, Math.floor(elapsed / 8) + 1);
     this.displayedFlooded.fill(0);
     for (let i = 0; i < steps; i += 1) this.displayedFlooded[this.sim.floodOrder[i]] = 1;
     return this.displayedFlooded;
