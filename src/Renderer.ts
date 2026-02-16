@@ -167,12 +167,24 @@ export class Renderer {
     }
 
     if (flooded && type !== TileType.ROCK) {
-      const wobble = Math.sin(timeMs * 0.006 + x * 0.08 + y * 0.06) * 0.06;
-      const alpha = 0.72 + wobble;
+      const phase = timeMs * 0.006 + x * 0.11 + y * 0.07;
+      const wobble = Math.sin(phase) * 0.05;
+      const alpha = 0.74 + wobble;
       ctx.fillStyle = `rgba(83, 184, 255, ${alpha})`;
       ctx.fillRect(x, y, size, size);
-      ctx.strokeStyle = 'rgba(190, 232, 255, 0.55)';
+
+      const crestY = y + size * (0.32 + Math.sin(phase * 1.7) * 0.08);
+      const crestY2 = y + size * (0.64 + Math.cos(phase * 1.3) * 0.07);
+      ctx.strokeStyle = 'rgba(210, 242, 255, 0.45)';
       ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 1, crestY);
+      ctx.lineTo(x + size - 1, crestY);
+      ctx.moveTo(x + 1, crestY2);
+      ctx.lineTo(x + size - 1, crestY2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(190, 232, 255, 0.5)';
       ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
     }
 

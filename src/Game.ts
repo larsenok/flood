@@ -172,7 +172,7 @@ export class Game {
       return this.displayedFlooded;
     }
     const elapsed = now - this.floodAnimStartMs;
-    const cellsPerSecond = 180;
+    const cellsPerSecond = 900;
     const revealCount = Math.min(
       this.sim.floodOrder.length,
       Math.floor((elapsed / 1000) * cellsPerSecond) + 1,
