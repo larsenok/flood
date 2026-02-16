@@ -16,15 +16,8 @@ export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uin
   const floodOrder = new Int32Array(total);
   const blocked = computeBlockedMask(level, levees);
 
-  let placed = 0;
-  for (let i = 0; i < levees.length; i += 1) {
-    if (levees[i] === 1) {
-      placed += 1;
-    }
-  }
-
   const hasContainedArea = detectContainedArea(level, levees);
-  const waterActive = placed >= level.wallBudget && hasContainedArea;
+  const waterActive = hasContainedArea;
 
   if (!waterActive) {
     return {
