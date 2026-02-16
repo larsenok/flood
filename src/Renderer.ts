@@ -199,29 +199,61 @@ export class Renderer {
   private drawLevee(x: number, y: number, size: number, timeMs = 0, placedAtMs = 0): void {
     const ctx = this.ctx;
     const ageMs = placedAtMs > 0 ? Math.max(0, timeMs - placedAtMs) : Number.POSITIVE_INFINITY;
-    const spawnAnim = ageMs === Number.POSITIVE_INFINITY ? 1 : Math.min(1, ageMs / 220);
-    const pulse = (1 - spawnAnim) * Math.sin(ageMs * 0.03) * 0.06;
-    const scale = 0.92 + spawnAnim * 0.08 + pulse;
-    const w = size * 0.76 * scale;
-    const h = size * 0.4 * scale;
+    const spawnAnim = ageMs === Number.POSITIVE_INFINITY ? 1 : Math.min(1, ageMs / 460);
+    const dropEase = 1 - Math.pow(1 - spawnAnim, 3);
+    const bounce = Math.exp(-7.8 * spawnAnim) * Math.sin(spawnAnim * 18.6);
+    const dropOffset = (1 - dropEase) * size * 0.72;
+    const settleLift = bounce * size * 0.11;
+    const widthSquash = 1 + Math.max(0, bounce) * 0.08;
+    const heightSquash = 1 - Math.max(0, bounce) * 0.1;
+    const w = size * 0.78 * widthSquash;
+    const h = size * 0.46 * heightSquash;
     const cx = x + size * 0.5;
-    const cy = y + size * 0.56;
+    const cy = y + size * 0.57 + dropOffset - settleLift;
     const left = cx - w * 0.5;
     const top = cy - h * 0.5;
-    const bandH = h / 3;
-    ctx.fillStyle = '#be9b69';
-    ctx.fillRect(left, top, w, bandH);
-    ctx.fillStyle = '#d2b283';
-    ctx.fillRect(left, top + bandH, w, bandH);
-    ctx.fillStyle = '#b48c5d';
-    ctx.fillRect(left, top + bandH * 2, w, bandH);
+    const knotInset = w * 0.08;
+    const bulge = h * 0.28;
+
+    ctx.fillStyle = 'rgba(20, 24, 32, 0.24)';
+    roundRect(ctx, left + w * 0.08, top + h * 0.66, w * 0.84, h * 0.54, h * 0.3);
+    ctx.fill();
+
+    ctx.fillStyle = '#d0b082';
+    ctx.beginPath();
+    ctx.moveTo(left + knotInset, top + h * 0.22);
+    ctx.quadraticCurveTo(left + w * 0.5, top - bulge, left + w - knotInset, top + h * 0.22);
+    ctx.quadraticCurveTo(left + w + w * 0.08, top + h * 0.54, left + w - knotInset, top + h * 0.84);
+    ctx.quadraticCurveTo(left + w * 0.5, top + h + bulge * 0.58, left + knotInset, top + h * 0.84);
+    ctx.quadraticCurveTo(left - w * 0.08, top + h * 0.54, left + knotInset, top + h * 0.22);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#be9a67';
+    ctx.beginPath();
+    ctx.moveTo(left + knotInset, top + h * 0.24);
+    ctx.quadraticCurveTo(left + w * 0.5, top + h * 0.12, left + w - knotInset, top + h * 0.24);
+    ctx.lineTo(left + w - knotInset, top + h * 0.38);
+    ctx.quadraticCurveTo(left + w * 0.5, top + h * 0.26, left + knotInset, top + h * 0.38);
+    ctx.closePath();
+    ctx.fill();
+
     ctx.strokeStyle = '#735333';
     ctx.lineWidth = 1;
-    ctx.strokeRect(left, top, w, h);
-    ctx.strokeStyle = 'rgba(255, 247, 222, 0.5)';
+    ctx.stroke();
+
+    ctx.strokeStyle = '#7e5a35';
     ctx.beginPath();
-    ctx.moveTo(left + 1, top + 1);
-    ctx.lineTo(left + w - 1, top + 1);
+    ctx.moveTo(left + w * 0.25, top + h * 0.2);
+    ctx.lineTo(left + w * 0.25, top + h * 0.82);
+    ctx.moveTo(left + w * 0.75, top + h * 0.2);
+    ctx.lineTo(left + w * 0.75, top + h * 0.82);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255, 247, 222, 0.45)';
+    ctx.beginPath();
+    ctx.moveTo(left + w * 0.22, top + h * 0.3);
+    ctx.quadraticCurveTo(left + w * 0.5, top + h * 0.18, left + w * 0.78, top + h * 0.3);
     ctx.stroke();
   }
 
