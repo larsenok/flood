@@ -45,16 +45,23 @@ function generateLevel(dateKey: string): LevelData {
   tiles.fill(TileType.LAND);
 
   // strategic mountain clusters
-  const clusters = 4;
+  const clusters = 7;
   for (let c = 0; c < clusters; c += 1) {
     const cx = rng.int(2, width - 2);
     const cy = rng.int(2, height - 2);
-    const clusterSize = rng.int(4, 8);
+    const clusterSize = rng.int(6, 11);
     for (let i = 0; i < clusterSize; i += 1) {
-      const x = Math.max(1, Math.min(width - 2, cx + rng.int(-1, 2)));
-      const y = Math.max(1, Math.min(height - 2, cy + rng.int(-1, 2)));
+      const x = Math.max(1, Math.min(width - 2, cx + rng.int(-2, 3)));
+      const y = Math.max(1, Math.min(height - 2, cy + rng.int(-2, 3)));
       tiles[y * width + x] = TileType.ROCK;
     }
+  }
+
+  // sprinkle extra mountain tiles so there are many viable enclosure options
+  for (let i = 0; i < 18; i += 1) {
+    const x = rng.int(1, width - 1);
+    const y = rng.int(1, height - 1);
+    tiles[y * width + x] = TileType.ROCK;
   }
 
   // clear some guaranteed build area around the center target
@@ -78,7 +85,7 @@ function generateLevel(dateKey: string): LevelData {
     date: dateKey,
     width,
     height,
-    wallBudget: 14,
+    wallBudget: 16,
     tiles,
     districts,
   };

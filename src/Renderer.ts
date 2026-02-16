@@ -2,12 +2,11 @@ import { LevelData, TileType } from './Level';
 
 export interface UiState {
   levelLabel: string;
+  wallBudget: number;
   placementsRemaining: number;
   score: number;
   floodedTiles: number;
   totalTiles: number;
-  waterActive: boolean;
-  hasContainedArea: boolean;
   hoverX: number;
   hoverY: number;
   timeMs: number;
@@ -17,7 +16,6 @@ export class Renderer {
   private readonly buttons = [
     { key: 'restart', label: 'Restart (R)' },
     { key: 'undo', label: 'Undo (Z)' },
-    { key: 'new', label: 'New Game (N)' },
   ] as const;
   private readonly ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -45,7 +43,7 @@ export class Renderer {
     this.height = rect.height;
   }
 
-  getUiActionAt(px: number, py: number): 'restart' | 'undo' | 'new' | null {
+  getUiActionAt(px: number, py: number): 'restart' | 'undo' | null {
     const startX = this.width - (this.buttons.length * 118 + 6);
     if (py < 12 || py > 42) return null;
     for (let i = 0; i < this.buttons.length; i += 1) {
@@ -66,7 +64,8 @@ export class Renderer {
 
   render(level: LevelData, levees: Uint8Array, flooded: Uint8Array, ui: UiState): void {
     const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.width, this.height);
+    ctx.fillStyle = '#87b678';
+    ctx.fillRect(0, 0, this.width, this.height);
 
     const topBarH = 56;
     const legendH = 30;
@@ -123,24 +122,22 @@ export class Renderer {
     ctx.fillStyle = '#dbe5ff';
     ctx.font = '600 15px Inter, system-ui, sans-serif';
     ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
+
+    const used = Math.max(0, ui.wallBudget - ui.placementsRemaining);
+    const bagX = 16;
+    const bagY = 30;
+    const bagW = 118;
+    const bagH = 20;
+    this.drawSandbagBadge(bagX, bagY, bagW, bagH, used, ui.wallBudget);
+
+    ctx.fillStyle = '#dbe5ff';
     ctx.font = '500 14px Inter, system-ui, sans-serif';
-    ctx.fillText(`Sandbags ${ui.placementsRemaining}`, 16, 45);
     ctx.fillText(`Score ${ui.score}`, 150, 45);
 
     const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
     ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
     ctx.fillText(`Flooded ${floodedPct}%`, 250, 45);
 
-    ctx.fillStyle = ui.waterActive ? '#6de8a5' : '#8fa8d9';
-    ctx.font = '500 12px Inter, system-ui, sans-serif';
-    const status = ui.waterActive
-      ? 'Water is flowing in from map edges.'
-      : ui.placementsRemaining > 0
-        ? 'Place all sandbags to begin the flood.'
-        : ui.hasContainedArea
-          ? 'Contained basin found. Water starts now.'
-          : 'No contained area yet. Adjust sandbag layout.';
-    ctx.fillText(status, 360, 45);
   }
 
   private drawTile(
@@ -188,15 +185,49 @@ export class Renderer {
 
   private drawLevee(x: number, y: number, size: number): void {
     const ctx = this.ctx;
-    const w = size * 0.74;
-    const h = size * 0.36;
+    const w = size * 0.76;
+    const h = size * 0.4;
     const cx = x + size * 0.5;
-    const cy = y + size * 0.55;
-    ctx.fillStyle = '#d0b98d';
-    ctx.fillRect(cx - w * 0.5, cy - h * 0.5, w, h);
-    ctx.strokeStyle = '#7a6343';
+    const cy = y + size * 0.56;
+    const left = cx - w * 0.5;
+    const top = cy - h * 0.5;
+    const bandH = h / 3;
+    ctx.fillStyle = '#be9b69';
+    ctx.fillRect(left, top, w, bandH);
+    ctx.fillStyle = '#d2b283';
+    ctx.fillRect(left, top + bandH, w, bandH);
+    ctx.fillStyle = '#b48c5d';
+    ctx.fillRect(left, top + bandH * 2, w, bandH);
+    ctx.strokeStyle = '#735333';
     ctx.lineWidth = 1;
-    ctx.strokeRect(cx - w * 0.5, cy - h * 0.5, w, h);
+    ctx.strokeRect(left, top, w, h);
+    ctx.strokeStyle = 'rgba(255, 247, 222, 0.5)';
+    ctx.beginPath();
+    ctx.moveTo(left + 1, top + 1);
+    ctx.lineTo(left + w - 1, top + 1);
+    ctx.stroke();
+  }
+
+  private drawSandbagBadge(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    used: number,
+    total: number,
+  ): void {
+    const ctx = this.ctx;
+    const radius = 10;
+    ctx.fillStyle = '#1b2538';
+    roundRect(ctx, x, y, width, height, radius);
+    ctx.fill();
+    ctx.strokeStyle = '#314766';
+    ctx.stroke();
+
+    this.drawLevee(x + 6, y - 4, 24);
+    ctx.fillStyle = '#dce7ff';
+    ctx.font = '600 12px Inter, system-ui, sans-serif';
+    ctx.fillText(`${used}/${total}`, x + 34, y + 14);
   }
 
   private drawDistrict(type: string, x: number, y: number, size: number, flooded: boolean): void {
@@ -288,4 +319,22 @@ export class Renderer {
     }
   }
 
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  const r = Math.min(radius, width * 0.5, height * 0.5);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
 }

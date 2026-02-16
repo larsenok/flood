@@ -7,10 +7,9 @@ export interface InputCallbacks {
   onCellPrimary: (x: number, y: number) => void;
   onRestart: () => void;
   onUndo: () => void;
-  onNewGame: () => void;
 }
 
-export type UiAction = 'restart' | 'undo' | 'new';
+export type UiAction = 'restart' | 'undo';
 
 export class InputController {
   state: InputState = { hoverX: -1, hoverY: -1 };
@@ -78,7 +77,6 @@ export class InputController {
     }
     if (action === 'restart') this.callbacks.onRestart();
     else if (action === 'undo') this.callbacks.onUndo();
-    else this.callbacks.onNewGame();
     return true;
   }
 
@@ -90,9 +88,6 @@ export class InputController {
     if (ev.key === 'z' || ev.key === 'Z') {
       this.callbacks.onUndo();
       return;
-    }
-    if (ev.key === 'n' || ev.key === 'N') {
-      this.callbacks.onNewGame();
     }
   };
 }
