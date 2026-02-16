@@ -8,9 +8,12 @@ export interface InputCallbacks {
   onRestart: () => void;
   onUndo: () => void;
   onNewMap: () => void;
+  onSubmitScore: () => void;
+  onToggleLeaderboard: () => void;
+  onCloseLeaderboard: () => void;
 }
 
-export type UiAction = 'restart' | 'undo' | 'new_map';
+export type UiAction = 'restart' | 'undo' | 'new_map' | 'submit_score' | 'toggle_leaderboard' | 'close_leaderboard';
 
 export class InputController {
   state: InputState = { hoverX: -1, hoverY: -1 };
@@ -79,6 +82,9 @@ export class InputController {
     if (action === 'restart') this.callbacks.onRestart();
     else if (action === 'undo') this.callbacks.onUndo();
     else if (action === 'new_map') this.callbacks.onNewMap();
+    else if (action === 'submit_score') this.callbacks.onSubmitScore();
+    else if (action === 'toggle_leaderboard') this.callbacks.onToggleLeaderboard();
+    else if (action === 'close_leaderboard') this.callbacks.onCloseLeaderboard();
     return true;
   }
 
@@ -94,6 +100,9 @@ export class InputController {
     if (ev.key === 'n' || ev.key === 'N') {
       this.callbacks.onNewMap();
       return;
+    }
+    if (ev.key === 'l' || ev.key === 'L') {
+      this.callbacks.onToggleLeaderboard();
     }
   };
 }

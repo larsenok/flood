@@ -1,4 +1,14 @@
-import { LevelData, TileType } from './Level';
+import type { UiAction } from './Input';
+import { DistrictType, LevelData, TileType } from './Level';
+import { LeaderboardEntry } from './Leaderboard';
+
+interface UiHitTarget {
+  key: UiAction;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface UiState {
   levelLabel: string;
@@ -10,6 +20,13 @@ export interface UiState {
   hoverX: number;
   hoverY: number;
   timeMs: number;
+  hasContainedArea: boolean;
+  leaderboardOpen: boolean;
+  leaderboardLoading: boolean;
+  leaderboardError: string | null;
+  leaderboardEntries: LeaderboardEntry[];
+  scoreSubmitted: boolean;
+  scoreSubmitting: boolean;
 }
 
 export class Renderer {
@@ -25,12 +42,11 @@ export class Renderer {
   private gridSize = 24;
   private offsetX = 0;
   private offsetY = 0;
+  private uiHitTargets: UiHitTarget[] = [];
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('2D canvas context unavailable.');
-    }
+    if (!ctx) throw new Error('2D canvas context unavailable.');
     this.ctx = ctx;
   }
 
@@ -44,12 +60,10 @@ export class Renderer {
     this.height = rect.height;
   }
 
-  getUiActionAt(px: number, py: number): 'restart' | 'undo' | 'new_map' | null {
-    const startX = this.width - (this.buttons.length * 118 + 6);
-    if (py < 12 || py > 42) return null;
-    for (let i = 0; i < this.buttons.length; i += 1) {
-      const x = startX + i * 118;
-      if (px >= x && px <= x + 110) return this.buttons[i].key;
+  getUiActionAt(px: number, py: number): UiAction | null {
+    for (let i = this.uiHitTargets.length - 1; i >= 0; i -= 1) {
+      const t = this.uiHitTargets[i];
+      if (px >= t.x && px <= t.x + t.width && py >= t.y && py <= t.y + t.height) return t.key;
     }
     return null;
   }
@@ -57,14 +71,13 @@ export class Renderer {
   getCellAt(level: LevelData, px: number, py: number): { x: number; y: number } | null {
     const x = Math.floor((px - this.offsetX) / this.gridSize);
     const y = Math.floor((py - this.offsetY) / this.gridSize);
-    if (x < 0 || y < 0 || x >= level.width || y >= level.height) {
-      return null;
-    }
+    if (x < 0 || y < 0 || x >= level.width || y >= level.height) return null;
     return { x, y };
   }
 
   render(level: LevelData, levees: Uint8Array, leveePlacedAtMs: Float64Array, flooded: Uint8Array, ui: UiState): void {
     const ctx = this.ctx;
+    this.uiHitTargets = [];
     ctx.fillStyle = '#87b678';
     ctx.fillRect(0, 0, this.width, this.height);
 
@@ -86,9 +99,7 @@ export class Renderer {
         const py = this.offsetY + y * this.gridSize;
         const isBoundary = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
         this.drawTile(level.tiles[i], px, py, this.gridSize, flooded[i] === 1, isBoundary, ui.timeMs);
-        if (levees[i] === 1) {
-          this.drawLevee(px, py, this.gridSize, ui.timeMs, leveePlacedAtMs[i]);
-        }
+        if (levees[i] === 1) this.drawLevee(px, py, this.gridSize, ui.timeMs, leveePlacedAtMs[i]);
       }
     }
 
@@ -101,19 +112,16 @@ export class Renderer {
 
     this.drawGrid(level);
     this.drawLegend(topBarH + 6);
+    this.drawButtons();
+    this.drawLeaderboardToggle(ui);
+    this.drawBottomActions(ui);
+    if (ui.leaderboardOpen) this.drawLeaderboardPanel(ui);
 
     if (ui.hoverX >= 0) {
       ctx.strokeStyle = '#f3f6ff';
       ctx.lineWidth = 2;
-      ctx.strokeRect(
-        this.offsetX + ui.hoverX * this.gridSize + 1,
-        this.offsetY + ui.hoverY * this.gridSize + 1,
-        this.gridSize - 2,
-        this.gridSize - 2,
-      );
+      ctx.strokeRect(this.offsetX + ui.hoverX * this.gridSize + 1, this.offsetY + ui.hoverY * this.gridSize + 1, this.gridSize - 2, this.gridSize - 2);
     }
-
-    this.drawButtons();
   }
 
   private drawTopBar(ui: UiState): void {
@@ -125,11 +133,7 @@ export class Renderer {
     ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
 
     const used = Math.max(0, ui.wallBudget - ui.placementsRemaining);
-    const bagX = 16;
-    const bagY = 30;
-    const bagW = 118;
-    const bagH = 20;
-    this.drawSandbagBadge(bagX, bagY, bagW, bagH, used, ui.wallBudget);
+    this.drawSandbagBadge(16, 30, 118, 20, used, ui.wallBudget);
 
     ctx.fillStyle = '#dbe5ff';
     ctx.font = '500 14px Inter, system-ui, sans-serif';
@@ -138,57 +142,22 @@ export class Renderer {
     const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
     ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
     ctx.fillText(`Flooded ${floodedPct}%`, 250, 45);
-
   }
 
-  private drawTile(
-    type: number,
-    x: number,
-    y: number,
-    size: number,
-    flooded: boolean,
-    isBoundary: boolean,
-    timeMs: number,
-  ): void {
+  private drawTile(type: number, x: number, y: number, size: number, flooded: boolean, isBoundary: boolean, timeMs: number): void {
     const ctx = this.ctx;
-    if (type === TileType.ROCK) {
-      ctx.fillStyle = '#51586a';
-    } else if (type === TileType.WATER) {
-      ctx.fillStyle = '#1e66d6';
-    } else if (type === TileType.OUTFLOW) {
-      ctx.fillStyle = '#0c3c83';
-    } else {
-      ctx.fillStyle = '#87b678';
-    }
+    ctx.fillStyle = type === TileType.ROCK ? '#51586a' : type === TileType.WATER ? '#1e66d6' : type === TileType.OUTFLOW ? '#0c3c83' : '#87b678';
     ctx.fillRect(x, y, size, size);
-
     if (isBoundary && type === TileType.LAND && !flooded) {
       ctx.fillStyle = 'rgba(255, 250, 200, 0.16)';
       ctx.fillRect(x, y, size, size);
     }
-
     if (flooded && type !== TileType.ROCK) {
       const phase = timeMs * 0.0048 + x * 0.11 + y * 0.07;
-      const wobble = Math.sin(phase) * 0.05;
-      const alpha = 0.74 + wobble;
+      const alpha = 0.74 + Math.sin(phase) * 0.05;
       ctx.fillStyle = `rgba(83, 184, 255, ${alpha})`;
       ctx.fillRect(x, y, size, size);
-
-      const crestY = y + size * (0.32 + Math.sin(phase * 1.7) * 0.08);
-      const crestY2 = y + size * (0.64 + Math.cos(phase * 1.3) * 0.07);
-      ctx.strokeStyle = 'rgba(210, 242, 255, 0.45)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x + 1, crestY);
-      ctx.lineTo(x + size - 1, crestY);
-      ctx.moveTo(x + 1, crestY2);
-      ctx.lineTo(x + size - 1, crestY2);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(190, 232, 255, 0.5)';
-      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
     }
-
     if (type === TileType.OUTFLOW) {
       ctx.strokeStyle = '#85ceff';
       ctx.lineWidth = 2;
@@ -199,92 +168,60 @@ export class Renderer {
   private drawLevee(x: number, y: number, size: number, timeMs = 0, placedAtMs = 0): void {
     const ctx = this.ctx;
     const ageMs = placedAtMs > 0 ? Math.max(0, timeMs - placedAtMs) : Number.POSITIVE_INFINITY;
-    const spawnAnim = ageMs === Number.POSITIVE_INFINITY ? 1 : Math.min(1, ageMs / 460);
+    const spawnAnim = ageMs === Number.POSITIVE_INFINITY ? 1 : Math.min(1, ageMs / 520);
     const dropEase = 1 - Math.pow(1 - spawnAnim, 3);
-    const bounce = Math.exp(-7.8 * spawnAnim) * Math.sin(spawnAnim * 18.6);
-    const dropOffset = (1 - dropEase) * size * 0.72;
-    const settleLift = bounce * size * 0.11;
-    const widthSquash = 1 + Math.max(0, bounce) * 0.08;
-    const heightSquash = 1 - Math.max(0, bounce) * 0.1;
-    const w = size * 0.78 * widthSquash;
-    const h = size * 0.46 * heightSquash;
-    const cx = x + size * 0.5;
-    const cy = y + size * 0.57 + dropOffset - settleLift;
-    const left = cx - w * 0.5;
-    const top = cy - h * 0.5;
-    const knotInset = w * 0.08;
-    const bulge = h * 0.28;
+    const bounce = Math.exp(-7 * spawnAnim) * Math.sin(spawnAnim * 16);
+    const dropOffset = (1 - dropEase) * -size * 0.95;
+    const settleLift = bounce * size * 0.1;
+    const w = size * 0.94 * (1 + Math.max(0, bounce) * 0.06);
+    const h = size * 0.54 * (1 - Math.max(0, bounce) * 0.08);
+    const left = x + size * 0.5 - w * 0.5;
+    const top = y + size * 0.58 - h * 0.5 + dropOffset - settleLift;
 
     ctx.fillStyle = 'rgba(20, 24, 32, 0.24)';
-    roundRect(ctx, left + w * 0.08, top + h * 0.66, w * 0.84, h * 0.54, h * 0.3);
+    roundRect(ctx, left + w * 0.1, top + h * 0.72, w * 0.8, h * 0.5, h * 0.3);
     ctx.fill();
 
+    const knotInset = w * 0.07;
+    const bulge = h * 0.24;
     ctx.fillStyle = '#d0b082';
     ctx.beginPath();
-    ctx.moveTo(left + knotInset, top + h * 0.22);
-    ctx.quadraticCurveTo(left + w * 0.5, top - bulge, left + w - knotInset, top + h * 0.22);
-    ctx.quadraticCurveTo(left + w + w * 0.08, top + h * 0.54, left + w - knotInset, top + h * 0.84);
-    ctx.quadraticCurveTo(left + w * 0.5, top + h + bulge * 0.58, left + knotInset, top + h * 0.84);
-    ctx.quadraticCurveTo(left - w * 0.08, top + h * 0.54, left + knotInset, top + h * 0.22);
+    ctx.moveTo(left + knotInset, top + h * 0.18);
+    ctx.quadraticCurveTo(left + w * 0.5, top - bulge, left + w - knotInset, top + h * 0.18);
+    ctx.quadraticCurveTo(left + w + w * 0.08, top + h * 0.56, left + w - knotInset, top + h * 0.85);
+    ctx.quadraticCurveTo(left + w * 0.5, top + h + bulge * 0.5, left + knotInset, top + h * 0.85);
+    ctx.quadraticCurveTo(left - w * 0.08, top + h * 0.56, left + knotInset, top + h * 0.18);
     ctx.closePath();
     ctx.fill();
-
-    ctx.fillStyle = '#be9a67';
-    ctx.beginPath();
-    ctx.moveTo(left + knotInset, top + h * 0.24);
-    ctx.quadraticCurveTo(left + w * 0.5, top + h * 0.12, left + w - knotInset, top + h * 0.24);
-    ctx.lineTo(left + w - knotInset, top + h * 0.38);
-    ctx.quadraticCurveTo(left + w * 0.5, top + h * 0.26, left + knotInset, top + h * 0.38);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.strokeStyle = '#735333';
-    ctx.lineWidth = 1;
-    ctx.stroke();
 
     ctx.strokeStyle = '#7e5a35';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(left + w * 0.25, top + h * 0.2);
-    ctx.lineTo(left + w * 0.25, top + h * 0.82);
-    ctx.moveTo(left + w * 0.75, top + h * 0.2);
-    ctx.lineTo(left + w * 0.75, top + h * 0.82);
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(255, 247, 222, 0.45)';
-    ctx.beginPath();
-    ctx.moveTo(left + w * 0.22, top + h * 0.3);
-    ctx.quadraticCurveTo(left + w * 0.5, top + h * 0.18, left + w * 0.78, top + h * 0.3);
+    ctx.moveTo(left + w * 0.22, top + h * 0.18);
+    ctx.lineTo(left + w * 0.22, top + h * 0.82);
+    ctx.moveTo(left + w * 0.78, top + h * 0.18);
+    ctx.lineTo(left + w * 0.78, top + h * 0.82);
     ctx.stroke();
   }
 
-  private drawSandbagBadge(
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    used: number,
-    total: number,
-  ): void {
+  private drawSandbagBadge(x: number, y: number, width: number, height: number, used: number, total: number): void {
     const ctx = this.ctx;
-    const radius = 10;
     ctx.fillStyle = '#1b2538';
-    roundRect(ctx, x, y, width, height, radius);
+    roundRect(ctx, x, y, width, height, 10);
     ctx.fill();
     ctx.strokeStyle = '#314766';
     ctx.stroke();
-
-    this.drawLevee(x + 6, y - 4, 24);
+    this.drawLevee(x + 2, y - 8, 28);
     ctx.fillStyle = '#dce7ff';
     ctx.font = '600 12px Inter, system-ui, sans-serif';
     ctx.fillText(`${used}/${total}`, x + 34, y + 14);
   }
 
-  private drawDistrict(type: string, x: number, y: number, size: number, flooded: boolean): void {
+  private drawDistrict(type: DistrictType, x: number, y: number, size: number, flooded: boolean): void {
     const ctx = this.ctx;
     ctx.save();
     ctx.translate(x + size * 0.5, y + size * 0.5);
     ctx.globalAlpha = flooded ? 0.72 : 1;
-
     if (type === 'HOME') {
       ctx.fillStyle = '#fff5e7';
       ctx.fillRect(-size * 0.18, -size * 0.05, size * 0.36, size * 0.24);
@@ -307,7 +244,6 @@ export class Renderer {
       ctx.fillStyle = '#6b532c';
       ctx.fillRect(-size * 0.08, -size * 0.08, size * 0.16, size * 0.16);
     }
-
     ctx.restore();
   }
 
@@ -339,7 +275,6 @@ export class Renderer {
       { c: '#d0b98d', label: 'Sandbag' },
       { c: '#51586a', label: 'Mountain' },
     ];
-
     let x = 16;
     ctx.font = '500 12px Inter, system-ui, sans-serif';
     for (let i = 0; i < items.length; i += 1) {
@@ -354,30 +289,78 @@ export class Renderer {
   }
 
   private drawButtons(): void {
-    const ctx = this.ctx;
     let x = this.width - (this.buttons.length * 118 + 6);
     for (let i = 0; i < this.buttons.length; i += 1) {
-      ctx.fillStyle = '#1b2538';
-      ctx.fillRect(x, 12, 110, 30);
-      ctx.strokeStyle = '#2f4263';
-      ctx.strokeRect(x, 12, 110, 30);
-      ctx.fillStyle = '#dce7ff';
-      ctx.font = '500 12px Inter, system-ui, sans-serif';
-      ctx.fillText(this.buttons[i].label, x + 8, 31);
+      this.drawButton(x, 12, 110, 30, this.buttons[i].label, this.buttons[i].key);
       x += 118;
     }
   }
 
+  private drawBottomActions(ui: UiState): void {
+    if (!ui.hasContainedArea) return;
+    const label = ui.scoreSubmitting ? 'Submitting…' : ui.scoreSubmitted ? 'Score submitted' : 'Submit score';
+    this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, ui.scoreSubmitted ? 'toggle_leaderboard' : 'submit_score', ui.scoreSubmitted ? '#28426c' : '#2b5f3e');
+  }
+
+  private drawLeaderboardToggle(ui: UiState): void {
+    const label = ui.leaderboardOpen ? 'Close board' : 'Leaderboard';
+    this.drawButton(this.width - 130, 76, 116, 30, label, ui.leaderboardOpen ? 'close_leaderboard' : 'toggle_leaderboard', '#24324b');
+  }
+
+  private drawLeaderboardPanel(ui: UiState): void {
+    const ctx = this.ctx;
+    const panelW = Math.min(520, this.width - 120);
+    const panelH = Math.min(420, this.height - 140);
+    const x = this.width - panelW - 20;
+    const y = 112;
+    ctx.fillStyle = 'rgba(8, 12, 20, 0.94)';
+    roundRect(ctx, x, y, panelW, panelH, 14);
+    ctx.fill();
+    ctx.strokeStyle = '#39527c';
+    ctx.stroke();
+
+    ctx.fillStyle = '#dce7ff';
+    ctx.font = '600 16px Inter, system-ui, sans-serif';
+    ctx.fillText('Flood Leaderboard', x + 16, y + 28);
+    ctx.font = '500 12px Inter, system-ui, sans-serif';
+    ctx.fillText('#  Nick  Score  Flood%  Bags  Time', x + 16, y + 48);
+
+    if (ui.leaderboardLoading) {
+      ctx.fillText('Loading leaderboard…', x + 16, y + 74);
+      return;
+    }
+    if (ui.leaderboardError) {
+      ctx.fillStyle = '#ff9c9c';
+      ctx.fillText(ui.leaderboardError, x + 16, y + 74);
+      return;
+    }
+
+    let rowY = y + 74;
+    for (let i = 0; i < Math.min(12, ui.leaderboardEntries.length); i += 1) {
+      const e = ui.leaderboardEntries[i];
+      const sec = Math.round(e.time_spent_ms / 1000);
+      const line = `${String(i + 1).padStart(2, ' ')}  ${e.nickname.padEnd(4, ' ')}  ${String(e.score).padStart(5, ' ')}  ${String(e.flooded_pct).padStart(5, ' ')}  ${String(e.bags_used).padStart(4, ' ')}/${e.wall_budget}  ${sec}s`;
+      ctx.fillStyle = i % 2 === 0 ? '#dce7ff' : '#b9caef';
+      ctx.fillText(line, x + 16, rowY);
+      rowY += 24;
+    }
+  }
+
+  private drawButton(x: number, y: number, width: number, height: number, label: string, key: UiAction, fill = '#1b2538'): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = fill;
+    roundRect(ctx, x, y, width, height, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#2f4263';
+    ctx.stroke();
+    ctx.fillStyle = '#dce7ff';
+    ctx.font = '500 12px Inter, system-ui, sans-serif';
+    ctx.fillText(label, x + 8, y + 19);
+    this.uiHitTargets.push({ key, x, y, width, height });
+  }
 }
 
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-): void {
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
   const r = Math.min(radius, width * 0.5, height * 0.5);
   ctx.beginPath();
   ctx.moveTo(x + r, y);

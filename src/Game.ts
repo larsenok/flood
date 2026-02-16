@@ -1,4 +1,5 @@
 import { InputController } from './Input';
+import { fetchLeaderboard, LeaderboardEntry, submitScore } from './Leaderboard';
 import { LevelData, TileType, idx } from './Level';
 import { loadDailyLevel, loadRandomLevel } from './LevelLoader';
 import { Renderer } from './Renderer';
@@ -21,6 +22,13 @@ export class Game {
   private displayedFlooded = new Uint8Array(0);
   private floodAnimStartMs = 0;
   private leveePlacedAtMs = new Float64Array(0);
+  private firstPlacementAtMs: number | null = null;
+  private scoreSubmitting = false;
+  private scoreSubmitted = false;
+  private leaderboardOpen = false;
+  private leaderboardLoading = false;
+  private leaderboardError: string | null = null;
+  private leaderboardEntries: LeaderboardEntry[] = [];
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderer: Renderer) {}
 
@@ -33,6 +41,9 @@ export class Game {
         onRestart: () => this.restart(),
         onUndo: () => this.undo(),
         onNewMap: () => this.newMap(),
+        onSubmitScore: () => void this.handleSubmitScore(),
+        onToggleLeaderboard: () => void this.toggleLeaderboard(),
+        onCloseLeaderboard: () => this.closeLeaderboard(),
       },
       (px, py) => this.renderer.getCellAt(this.level, px, py),
       (px, py) => this.renderer.getUiActionAt(px, py),
@@ -50,22 +61,27 @@ export class Game {
 
   private async loadLevel(dateKey = toDateKey()): Promise<void> {
     this.level = await loadDailyLevel(dateKey);
-    this.levees = new Uint8Array(this.level.width * this.level.height);
-    this.displayedFlooded = new Uint8Array(this.level.width * this.level.height);
-    this.leveePlacedAtMs = new Float64Array(this.level.width * this.level.height);
-    this.history = [];
+    this.resetBoardState();
     this.applyHashState();
     this.recompute();
   }
 
   private async newMap(): Promise<void> {
     this.level = await loadRandomLevel();
+    this.resetBoardState();
+    this.recompute();
+  }
+
+  private resetBoardState(): void {
     this.levees = new Uint8Array(this.level.width * this.level.height);
     this.displayedFlooded = new Uint8Array(this.level.width * this.level.height);
     this.leveePlacedAtMs = new Float64Array(this.level.width * this.level.height);
     this.history = [];
-    this.leveePlacedAtMs.fill(0);
-    this.recompute();
+    this.firstPlacementAtMs = null;
+    this.scoreSubmitting = false;
+    this.scoreSubmitted = false;
+    this.leaderboardOpen = false;
+    this.leaderboardError = null;
   }
 
   private applyHashState(): void {
@@ -78,78 +94,135 @@ export class Game {
     for (let i = 0; i < pieces.length; i += 1) {
       const idxVal = Number.parseInt(pieces[i], 36);
       if (!Number.isFinite(idxVal) || idxVal < 0 || idxVal >= this.levees.length) continue;
-      if (this.level.tiles[idxVal] !== TileType.LAND) continue;
+      if (!this.canPlaceAtIndex(idxVal)) continue;
       this.levees[idxVal] = 1;
     }
   }
 
-  private onResize = (): void => {
-    this.renderer.resize();
-  };
+  private onResize = (): void => this.renderer.resize();
 
   private restart(): void {
     this.levees.fill(0);
     this.leveePlacedAtMs.fill(0);
     this.history = [];
+    this.firstPlacementAtMs = null;
+    this.scoreSubmitted = false;
     this.recompute();
   }
 
   private undo(): void {
     const snap = this.history.pop();
-    if (!snap) {
-      return;
-    }
+    if (!snap) return;
     this.levees.set(snap.levees);
     this.leveePlacedAtMs.set(snap.leveePlacedAtMs);
+    if (this.countPlaced() === 0) this.firstPlacementAtMs = null;
     this.recompute();
+  }
+
+  private canPlaceAtIndex(i: number): boolean {
+    if (this.level.tiles[i] !== TileType.LAND) return false;
+    for (let j = 0; j < this.level.districts.length; j += 1) {
+      const d = this.level.districts[j];
+      if ((d.type === 'HOME' || d.type === 'HOSPITAL') && d.y * this.level.width + d.x === i) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private toggleLevee(x: number, y: number): void {
     const i = idx(x, y, this.level.width);
-    const tile = this.level.tiles[i];
-    if (tile !== TileType.LAND) {
-      return;
-    }
+    if (!this.canPlaceAtIndex(i)) return;
     const placed = this.countPlaced();
-    if (this.levees[i] === 0 && placed >= this.level.wallBudget) {
-      return;
-    }
+    if (this.levees[i] === 0 && placed >= this.level.wallBudget) return;
     this.pushHistory();
     if (this.levees[i] === 1) {
       this.levees[i] = 0;
       this.leveePlacedAtMs[i] = 0;
+      if (this.countPlaced() === 0) this.firstPlacementAtMs = null;
     } else {
       this.levees[i] = 1;
-      this.leveePlacedAtMs[i] = performance.now();
+      const now = performance.now();
+      this.leveePlacedAtMs[i] = now;
+      if (this.firstPlacementAtMs === null) this.firstPlacementAtMs = now;
     }
     this.recompute();
   }
 
+  private async handleSubmitScore(): Promise<void> {
+    if (!this.sim.hasContainedArea || this.scoreSubmitting || this.scoreSubmitted) return;
+    const nicknameInput = window.prompt('Enter 3-letter nickname (blank = ANON):', '');
+    const nickname = this.normalizeNickname(nicknameInput ?? '');
+    this.scoreSubmitting = true;
+    this.leaderboardError = null;
+    try {
+      const bagsUsed = this.countPlaced();
+      const floodedTiles = this.countFlooded(this.sim.flooded);
+      const totalTiles = this.level.width * this.level.height;
+      const floodedPct = Math.round((floodedTiles / Math.max(1, totalTiles)) * 100);
+      const elapsedMs = this.firstPlacementAtMs === null ? 0 : Math.max(0, Math.round(performance.now() - this.firstPlacementAtMs));
+      await submitScore({
+        nickname,
+        level_date: this.level.date,
+        score: this.sim.score,
+        flooded_pct: floodedPct,
+        bags_used: bagsUsed,
+        wall_budget: this.level.wallBudget,
+        dry_land: this.sim.dryLand,
+        flooded_tiles: floodedTiles,
+        total_tiles: totalTiles,
+        time_spent_ms: elapsedMs,
+      });
+      this.scoreSubmitted = true;
+      await this.loadLeaderboard();
+      this.leaderboardOpen = true;
+    } catch (err) {
+      this.leaderboardError = err instanceof Error ? err.message : 'Failed to submit score';
+    } finally {
+      this.scoreSubmitting = false;
+    }
+  }
+
+  private normalizeNickname(raw: string): string {
+    const cleaned = raw.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+    return cleaned.length > 0 ? cleaned.padEnd(3, 'X') : 'ANON';
+  }
+
+  private async toggleLeaderboard(): Promise<void> {
+    this.leaderboardOpen = !this.leaderboardOpen;
+    if (this.leaderboardOpen && this.leaderboardEntries.length === 0) await this.loadLeaderboard();
+  }
+
+  private closeLeaderboard(): void {
+    this.leaderboardOpen = false;
+  }
+
+  private async loadLeaderboard(): Promise<void> {
+    this.leaderboardLoading = true;
+    this.leaderboardError = null;
+    try {
+      this.leaderboardEntries = await fetchLeaderboard();
+    } catch (err) {
+      this.leaderboardError = err instanceof Error ? err.message : 'Failed to load leaderboard';
+    } finally {
+      this.leaderboardLoading = false;
+    }
+  }
+
   private pushHistory(): void {
     this.history.push({ levees: this.levees.slice(), leveePlacedAtMs: this.leveePlacedAtMs.slice() });
-    if (this.history.length > this.maxHistory) {
-      this.history.shift();
-    }
+    if (this.history.length > this.maxHistory) this.history.shift();
   }
 
   private countPlaced(): number {
     let count = 0;
-    for (let i = 0; i < this.levees.length; i += 1) {
-      if (this.levees[i] === 1) {
-        count += 1;
-      }
-    }
+    for (let i = 0; i < this.levees.length; i += 1) if (this.levees[i] === 1) count += 1;
     return count;
   }
 
-
   private countFlooded(cells: Uint8Array): number {
     let count = 0;
-    for (let i = 0; i < cells.length; i += 1) {
-      if (cells[i] === 1) {
-        count += 1;
-      }
-    }
+    for (let i = 0; i < cells.length; i += 1) if (cells[i] === 1) count += 1;
     return count;
   }
 
@@ -162,11 +235,7 @@ export class Game {
 
   private updateHash(): void {
     const placed: number[] = [];
-    for (let i = 0; i < this.levees.length; i += 1) {
-      if (this.levees[i] === 1) {
-        placed.push(i);
-      }
-    }
+    for (let i = 0; i < this.levees.length; i += 1) if (this.levees[i] === 1) placed.push(i);
     const encoded = placed.map((v) => v.toString(36)).join('.');
     history.replaceState(null, '', `#${this.level.date}|${encoded}`);
   }
@@ -184,6 +253,13 @@ export class Game {
       hoverX: this.input.state.hoverX,
       hoverY: this.input.state.hoverY,
       timeMs: now,
+      hasContainedArea: this.sim.hasContainedArea,
+      leaderboardOpen: this.leaderboardOpen,
+      leaderboardLoading: this.leaderboardLoading,
+      leaderboardError: this.leaderboardError,
+      leaderboardEntries: this.leaderboardEntries,
+      scoreSubmitted: this.scoreSubmitted,
+      scoreSubmitting: this.scoreSubmitting,
     });
     this.raf = requestAnimationFrame(this.tick);
   };
@@ -194,15 +270,9 @@ export class Game {
       return this.displayedFlooded;
     }
     const elapsed = now - this.floodAnimStartMs;
-    const cellsPerSecond = 720;
-    const revealCount = Math.min(
-      this.sim.floodOrder.length,
-      Math.floor((elapsed / 1000) * cellsPerSecond) + 1,
-    );
+    const steps = Math.min(this.sim.floodOrder.length, Math.floor(elapsed / 14) + 1);
     this.displayedFlooded.fill(0);
-    for (let i = 0; i < revealCount; i += 1) {
-      this.displayedFlooded[this.sim.floodOrder[i]] = 1;
-    }
+    for (let i = 0; i < steps; i += 1) this.displayedFlooded[this.sim.floodOrder[i]] = 1;
     return this.displayedFlooded;
   }
 }
