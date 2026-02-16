@@ -2,13 +2,9 @@ import { LevelData, TileType } from './Level';
 
 export interface SimResult {
   flooded: Uint8Array;
-  reachedOutflow: boolean;
   score: number;
   dryLand: number;
-  noDrainagePenalty: number;
 }
-
-const NO_DRAINAGE_PENALTY = -30;
 
 export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uint8Array): SimResult {
   const total = level.width * level.height;
@@ -18,20 +14,20 @@ export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uin
   const queue = new Int32Array(total);
   let head = 0;
   let tail = 0;
-  let reachedOutflow = false;
 
   for (let i = 0; i < total; i += 1) {
-    if (level.tiles[i] === TileType.WATER) {
-      flooded[i] = 1;
-      queue[tail++] = i;
-    }
+    const x = i % level.width;
+    const y = Math.floor(i / level.width);
+    const isBoundary = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
+    const isWaterSource = level.tiles[i] === TileType.WATER;
+    if (!isBoundary && !isWaterSource) continue;
+    if (level.tiles[i] === TileType.ROCK || levees[i] !== 0) continue;
+    flooded[i] = 1;
+    queue[tail++] = i;
   }
 
   while (head < tail) {
     const index = queue[head++];
-    if (level.tiles[index] === TileType.OUTFLOW) {
-      reachedOutflow = true;
-    }
 
     const x = index % level.width;
     const y = Math.floor(index / level.width);
@@ -76,10 +72,7 @@ export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uin
     score -= adjacentHomeCount(d.x, d.y, level.width, level.height, districtByIndex);
   }
 
-  const noDrainagePenalty = reachedOutflow ? 0 : NO_DRAINAGE_PENALTY;
-  score += noDrainagePenalty;
-
-  return { flooded, reachedOutflow, score, dryLand, noDrainagePenalty };
+  return { flooded, score, dryLand };
 
   function visit(nx: number, ny: number): void {
     if (nx < 0 || ny < 0 || nx >= level.width || ny >= level.height) {

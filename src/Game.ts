@@ -123,6 +123,17 @@ export class Game {
     return count;
   }
 
+
+  private countFlooded(): number {
+    let count = 0;
+    for (let i = 0; i < this.sim.flooded.length; i += 1) {
+      if (this.sim.flooded[i] === 1) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   private recompute(): void {
     this.sim = runSimulation(this.level, this.levees, this.sim?.flooded);
     this.updateHash();
@@ -145,7 +156,8 @@ export class Game {
       levelLabel: this.level.date,
       placementsRemaining: this.level.wallBudget - this.countPlaced(),
       score: this.sim.score,
-      drainageOk: this.sim.reachedOutflow,
+      floodedTiles: this.countFlooded(),
+      totalTiles: this.level.width * this.level.height,
       hoverX: this.input.state.hoverX,
       hoverY: this.input.state.hoverY,
       timeMs: now,
