@@ -167,13 +167,13 @@ export class Renderer {
     }
 
     if (flooded && type !== TileType.ROCK) {
-      const wobble = 1 + Math.sin(timeMs * 0.01 + x * 0.13 + y * 0.09) * 0.1;
-      const p = size * 0.46 * wobble;
-      ctx.fillStyle = '#53b8ff';
-      ctx.fillRect(x + size * 0.5 - p * 0.5, y + size * 0.5 - p * 0.5, p, p);
-      ctx.strokeStyle = 'rgba(190, 232, 255, 0.9)';
+      const wobble = Math.sin(timeMs * 0.006 + x * 0.08 + y * 0.06) * 0.06;
+      const alpha = 0.72 + wobble;
+      ctx.fillStyle = `rgba(83, 184, 255, ${alpha})`;
+      ctx.fillRect(x, y, size, size);
+      ctx.strokeStyle = 'rgba(190, 232, 255, 0.55)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x + size * 0.5 - p * 0.5, y + size * 0.5 - p * 0.5, p, p);
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
     }
 
     if (type === TileType.OUTFLOW) {
