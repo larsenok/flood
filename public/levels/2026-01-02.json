@@ -1,0 +1,35 @@
+{
+  "date": "2026-01-02",
+  "size": [16, 16],
+  "wallBudget": 10,
+  "tiles": [
+    "LLLLLLLLLLLLLLLO",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLRRLLLLLLLLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LWWWWWWWWWWWLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLRRRLLLLLLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLLLLLLLRRLLWL",
+    "LLLLLLLLLLLLLLWL",
+    "LLLLLLLLLLLLLLLL"
+  ],
+  "districts": [
+    { "type": "HOSPITAL", "x": 2, "y": 12 },
+    { "type": "HOME", "x": 2, "y": 11 },
+    { "type": "HOME", "x": 3, "y": 12 },
+    { "type": "HOME", "x": 1, "y": 12 },
+    { "type": "POWER_STATION", "x": 9, "y": 7 },
+    { "type": "HOME", "x": 8, "y": 7 },
+    { "type": "HOME", "x": 10, "y": 7 },
+    { "type": "HOME", "x": 9, "y": 8 },
+    { "type": "HOSPITAL", "x": 13, "y": 3 }
+  ],
+  "notes": "Cross-current puzzle"
+}
