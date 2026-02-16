@@ -16,6 +16,7 @@ export class Renderer {
   private readonly buttons = [
     { key: 'restart', label: 'Restart (R)' },
     { key: 'undo', label: 'Undo (Z)' },
+    { key: 'new_map', label: 'New map (N)' },
   ] as const;
   private readonly ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -43,7 +44,7 @@ export class Renderer {
     this.height = rect.height;
   }
 
-  getUiActionAt(px: number, py: number): 'restart' | 'undo' | null {
+  getUiActionAt(px: number, py: number): 'restart' | 'undo' | 'new_map' | null {
     const startX = this.width - (this.buttons.length * 118 + 6);
     if (py < 12 || py > 42) return null;
     for (let i = 0; i < this.buttons.length; i += 1) {
@@ -62,7 +63,7 @@ export class Renderer {
     return { x, y };
   }
 
-  render(level: LevelData, levees: Uint8Array, flooded: Uint8Array, ui: UiState): void {
+  render(level: LevelData, levees: Uint8Array, leveePlacedAtMs: Float64Array, flooded: Uint8Array, ui: UiState): void {
     const ctx = this.ctx;
     ctx.fillStyle = '#87b678';
     ctx.fillRect(0, 0, this.width, this.height);
@@ -86,7 +87,7 @@ export class Renderer {
         const isBoundary = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
         this.drawTile(level.tiles[i], px, py, this.gridSize, flooded[i] === 1, isBoundary, ui.timeMs);
         if (levees[i] === 1) {
-          this.drawLevee(px, py, this.gridSize);
+          this.drawLevee(px, py, this.gridSize, ui.timeMs, leveePlacedAtMs[i]);
         }
       }
     }
@@ -167,13 +168,25 @@ export class Renderer {
     }
 
     if (flooded && type !== TileType.ROCK) {
-      const wobble = 1 + Math.sin(timeMs * 0.01 + x * 0.13 + y * 0.09) * 0.1;
-      const p = size * 0.46 * wobble;
-      ctx.fillStyle = '#53b8ff';
-      ctx.fillRect(x + size * 0.5 - p * 0.5, y + size * 0.5 - p * 0.5, p, p);
-      ctx.strokeStyle = 'rgba(190, 232, 255, 0.9)';
+      const phase = timeMs * 0.0048 + x * 0.11 + y * 0.07;
+      const wobble = Math.sin(phase) * 0.05;
+      const alpha = 0.74 + wobble;
+      ctx.fillStyle = `rgba(83, 184, 255, ${alpha})`;
+      ctx.fillRect(x, y, size, size);
+
+      const crestY = y + size * (0.32 + Math.sin(phase * 1.7) * 0.08);
+      const crestY2 = y + size * (0.64 + Math.cos(phase * 1.3) * 0.07);
+      ctx.strokeStyle = 'rgba(210, 242, 255, 0.45)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x + size * 0.5 - p * 0.5, y + size * 0.5 - p * 0.5, p, p);
+      ctx.beginPath();
+      ctx.moveTo(x + 1, crestY);
+      ctx.lineTo(x + size - 1, crestY);
+      ctx.moveTo(x + 1, crestY2);
+      ctx.lineTo(x + size - 1, crestY2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(190, 232, 255, 0.5)';
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
     }
 
     if (type === TileType.OUTFLOW) {
@@ -183,10 +196,14 @@ export class Renderer {
     }
   }
 
-  private drawLevee(x: number, y: number, size: number): void {
+  private drawLevee(x: number, y: number, size: number, timeMs = 0, placedAtMs = 0): void {
     const ctx = this.ctx;
-    const w = size * 0.76;
-    const h = size * 0.4;
+    const ageMs = placedAtMs > 0 ? Math.max(0, timeMs - placedAtMs) : Number.POSITIVE_INFINITY;
+    const spawnAnim = ageMs === Number.POSITIVE_INFINITY ? 1 : Math.min(1, ageMs / 220);
+    const pulse = (1 - spawnAnim) * Math.sin(ageMs * 0.03) * 0.06;
+    const scale = 0.92 + spawnAnim * 0.08 + pulse;
+    const w = size * 0.76 * scale;
+    const h = size * 0.4 * scale;
     const cx = x + size * 0.5;
     const cy = y + size * 0.56;
     const left = cx - w * 0.5;

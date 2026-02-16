@@ -10,6 +10,11 @@ interface RawLevel {
   notes?: string;
 }
 
+
+export async function loadRandomLevel(seed = `random-${Date.now()}`): Promise<LevelData> {
+  return normalizeForSandbagFlow(generateLevel(seed));
+}
+
 export async function loadDailyLevel(dateKey = toDateKey()): Promise<LevelData> {
   try {
     const response = await fetch(`/levels/${dateKey}.json`);
@@ -73,13 +78,20 @@ function generateLevel(dateKey: string): LevelData {
     }
   }
 
-  const districts: LevelData['districts'] = [
-    { type: 'HOME', x: centerX, y: centerY },
-    { type: 'HOSPITAL', x: centerX - 3, y: centerY - 2 },
-    { type: 'HOSPITAL', x: centerX + 3, y: centerY - 1 },
-    { type: 'HOSPITAL', x: centerX - 2, y: centerY + 3 },
-    { type: 'HOSPITAL', x: centerX + 2, y: centerY + 3 },
+  const home = { type: 'HOME' as const, x: centerX, y: centerY };
+  const used = new Set<number>([home.y * width + home.x]);
+  const hospitalTargets = [
+    { x: centerX - 3, y: centerY - 2 },
+    { x: centerX + 3, y: centerY - 1 },
+    { x: centerX - 2, y: centerY + 3 },
+    { x: centerX + 2, y: centerY + 3 },
   ];
+  const hospitals = hospitalTargets
+    .map((target) => findNearestBuildableTile(target.x, target.y, width, height, tiles, used))
+    .filter((tile): tile is { x: number; y: number } => tile !== null)
+    .map((tile) => ({ type: 'HOSPITAL' as const, x: tile.x, y: tile.y }));
+
+  const districts: LevelData['districts'] = [home, ...hospitals];
 
   return {
     date: dateKey,
@@ -89,4 +101,37 @@ function generateLevel(dateKey: string): LevelData {
     tiles,
     districts,
   };
+}
+
+
+function findNearestBuildableTile(
+  targetX: number,
+  targetY: number,
+  width: number,
+  height: number,
+  tiles: Uint8Array,
+  used: Set<number>,
+): { x: number; y: number } | null {
+  const maxRadius = Math.max(width, height);
+  for (let radius = 0; radius <= maxRadius; radius += 1) {
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) {
+          continue;
+        }
+        const x = targetX + dx;
+        const y = targetY + dy;
+        if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) {
+          continue;
+        }
+        const index = y * width + x;
+        if (tiles[index] === TileType.ROCK || used.has(index)) {
+          continue;
+        }
+        used.add(index);
+        return { x, y };
+      }
+    }
+  }
+  return null;
 }

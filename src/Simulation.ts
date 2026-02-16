@@ -16,15 +16,8 @@ export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uin
   const floodOrder = new Int32Array(total);
   const blocked = computeBlockedMask(level, levees);
 
-  let placed = 0;
-  for (let i = 0; i < levees.length; i += 1) {
-    if (levees[i] === 1) {
-      placed += 1;
-    }
-  }
-
   const hasContainedArea = detectContainedArea(level, levees);
-  const waterActive = placed >= level.wallBudget && hasContainedArea;
+  const waterActive = hasContainedArea;
 
   if (!waterActive) {
     return {
@@ -119,8 +112,40 @@ export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uin
 }
 
 function detectContainedArea(level: LevelData, levees: Uint8Array): boolean {
+  let placedLevees = 0;
+  for (let i = 0; i < levees.length; i += 1) {
+    if (levees[i] === 1) {
+      placedLevees += 1;
+    }
+  }
+  if (placedLevees === 0) {
+    return false;
+  }
+
+  const blockedWithLevees = computeBlockedMask(level, levees);
+  const blockedWithoutLevees = computeBlockedMask(level);
+  const reachableWithLevees = computeReachableFromBoundary(level, blockedWithLevees);
+  const reachableWithoutLevees = computeReachableFromBoundary(level, blockedWithoutLevees);
+
+  for (let i = 0; i < level.districts.length; i += 1) {
+    const district = level.districts[i];
+    if (district.type !== 'HOME') {
+      continue;
+    }
+    const districtIndex = district.y * level.width + district.x;
+    const enclosedNow = reachableWithLevees[districtIndex] === 0;
+    const wasOpenWithoutLevees = reachableWithoutLevees[districtIndex] === 1;
+    if (enclosedNow && wasOpenWithoutLevees) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+function computeReachableFromBoundary(level: LevelData, blocked: Uint8Array): Uint8Array {
   const total = level.width * level.height;
-  const blocked = computeBlockedMask(level, levees);
   const reachable = new Uint8Array(total);
   const queue = new Int32Array(total);
   let head = 0;
@@ -147,16 +172,7 @@ function detectContainedArea(level: LevelData, levees: Uint8Array): boolean {
     walk(x, y - 1);
   }
 
-  for (let i = 0; i < total; i += 1) {
-    if (blocked[i] === 1) {
-      continue;
-    }
-    if (reachable[i] === 0) {
-      return true;
-    }
-  }
-
-  return false;
+  return reachable;
 
   function walk(nx: number, ny: number): void {
     if (nx < 0 || ny < 0 || nx >= level.width || ny >= level.height) {
@@ -171,30 +187,13 @@ function detectContainedArea(level: LevelData, levees: Uint8Array): boolean {
   }
 }
 
-function computeBlockedMask(level: LevelData, levees: Uint8Array): Uint8Array {
+
+function computeBlockedMask(level: LevelData, levees?: Uint8Array): Uint8Array {
   const total = level.width * level.height;
   const blocked = new Uint8Array(total);
   for (let i = 0; i < total; i += 1) {
-    if (level.tiles[i] === TileType.ROCK || levees[i] !== 0) {
+    if (level.tiles[i] === TileType.ROCK || (levees && levees[i] !== 0)) {
       blocked[i] = 1;
-    }
-  }
-
-  for (let y = 0; y < level.height - 1; y += 1) {
-    for (let x = 0; x < level.width - 1; x += 1) {
-      const a = y * level.width + x;
-      const b = (y + 1) * level.width + (x + 1);
-      if (blocked[a] === 1 && blocked[b] === 1) {
-        blocked[y * level.width + (x + 1)] = 1;
-        blocked[(y + 1) * level.width + x] = 1;
-      }
-
-      const c = y * level.width + (x + 1);
-      const d = (y + 1) * level.width + x;
-      if (blocked[c] === 1 && blocked[d] === 1) {
-        blocked[y * level.width + x] = 1;
-        blocked[(y + 1) * level.width + (x + 1)] = 1;
-      }
     }
   }
 

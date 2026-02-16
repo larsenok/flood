@@ -1,12 +1,13 @@
 import { InputController } from './Input';
 import { LevelData, TileType, idx } from './Level';
-import { loadDailyLevel } from './LevelLoader';
+import { loadDailyLevel, loadRandomLevel } from './LevelLoader';
 import { Renderer } from './Renderer';
 import { SimResult, runSimulation } from './Simulation';
 import { toDateKey } from './utils';
 
 interface Snapshot {
   levees: Uint8Array;
+  leveePlacedAtMs: Float64Array;
 }
 
 export class Game {
@@ -19,6 +20,7 @@ export class Game {
   private raf = 0;
   private displayedFlooded = new Uint8Array(0);
   private floodAnimStartMs = 0;
+  private leveePlacedAtMs = new Float64Array(0);
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderer: Renderer) {}
 
@@ -30,6 +32,7 @@ export class Game {
         onCellPrimary: (x, y) => this.toggleLevee(x, y),
         onRestart: () => this.restart(),
         onUndo: () => this.undo(),
+        onNewMap: () => this.newMap(),
       },
       (px, py) => this.renderer.getCellAt(this.level, px, py),
       (px, py) => this.renderer.getUiActionAt(px, py),
@@ -49,8 +52,19 @@ export class Game {
     this.level = await loadDailyLevel(dateKey);
     this.levees = new Uint8Array(this.level.width * this.level.height);
     this.displayedFlooded = new Uint8Array(this.level.width * this.level.height);
+    this.leveePlacedAtMs = new Float64Array(this.level.width * this.level.height);
     this.history = [];
     this.applyHashState();
+    this.recompute();
+  }
+
+  private async newMap(): Promise<void> {
+    this.level = await loadRandomLevel();
+    this.levees = new Uint8Array(this.level.width * this.level.height);
+    this.displayedFlooded = new Uint8Array(this.level.width * this.level.height);
+    this.leveePlacedAtMs = new Float64Array(this.level.width * this.level.height);
+    this.history = [];
+    this.leveePlacedAtMs.fill(0);
     this.recompute();
   }
 
@@ -75,6 +89,7 @@ export class Game {
 
   private restart(): void {
     this.levees.fill(0);
+    this.leveePlacedAtMs.fill(0);
     this.history = [];
     this.recompute();
   }
@@ -85,6 +100,7 @@ export class Game {
       return;
     }
     this.levees.set(snap.levees);
+    this.leveePlacedAtMs.set(snap.leveePlacedAtMs);
     this.recompute();
   }
 
@@ -99,12 +115,18 @@ export class Game {
       return;
     }
     this.pushHistory();
-    this.levees[i] = this.levees[i] === 1 ? 0 : 1;
+    if (this.levees[i] === 1) {
+      this.levees[i] = 0;
+      this.leveePlacedAtMs[i] = 0;
+    } else {
+      this.levees[i] = 1;
+      this.leveePlacedAtMs[i] = performance.now();
+    }
     this.recompute();
   }
 
   private pushHistory(): void {
-    this.history.push({ levees: this.levees.slice() });
+    this.history.push({ levees: this.levees.slice(), leveePlacedAtMs: this.leveePlacedAtMs.slice() });
     if (this.history.length > this.maxHistory) {
       this.history.shift();
     }
@@ -152,7 +174,7 @@ export class Game {
   private tick = (): void => {
     const now = performance.now();
     const animatedFlooded = this.getAnimatedFlooded(now);
-    this.renderer.render(this.level, this.levees, animatedFlooded, {
+    this.renderer.render(this.level, this.levees, this.leveePlacedAtMs, animatedFlooded, {
       levelLabel: this.level.date,
       wallBudget: this.level.wallBudget,
       placementsRemaining: this.level.wallBudget - this.countPlaced(),
@@ -172,7 +194,7 @@ export class Game {
       return this.displayedFlooded;
     }
     const elapsed = now - this.floodAnimStartMs;
-    const cellsPerSecond = 180;
+    const cellsPerSecond = 720;
     const revealCount = Math.min(
       this.sim.floodOrder.length,
       Math.floor((elapsed / 1000) * cellsPerSecond) + 1,
