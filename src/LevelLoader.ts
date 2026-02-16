@@ -69,6 +69,10 @@ function generateLevel(dateKey: string): LevelData {
     tiles[y * width + x] = TileType.ROCK;
   }
 
+  for (let pass = 0; pass < 2; pass += 1) {
+    clearMountainLockedPockets(tiles, width, height);
+  }
+
   // clear some guaranteed build area around the center target
   const centerX = Math.floor(width / 2);
   const centerY = Math.floor(height / 2);
@@ -101,6 +105,26 @@ function generateLevel(dateKey: string): LevelData {
     tiles,
     districts,
   };
+}
+
+
+
+function clearMountainLockedPockets(tiles: Uint8Array, width: number, height: number): void {
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const i = y * width + x;
+      if (tiles[i] !== TileType.LAND) {
+        continue;
+      }
+      const n = tiles[(y - 1) * width + x] === TileType.ROCK;
+      const s = tiles[(y + 1) * width + x] === TileType.ROCK;
+      const w = tiles[y * width + (x - 1)] === TileType.ROCK;
+      const e = tiles[y * width + (x + 1)] === TileType.ROCK;
+      if (n && s && w && e) {
+        tiles[(y - 1) * width + x] = TileType.LAND;
+      }
+    }
+  }
 }
 
 
