@@ -4,12 +4,34 @@ export interface SimResult {
   flooded: Uint8Array;
   score: number;
   dryLand: number;
+  waterActive: boolean;
+  hasContainedArea: boolean;
 }
 
 export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uint8Array): SimResult {
   const total = level.width * level.height;
   const flooded = buffer && buffer.length === total ? buffer : new Uint8Array(total);
   flooded.fill(0);
+
+  let placed = 0;
+  for (let i = 0; i < levees.length; i += 1) {
+    if (levees[i] === 1) {
+      placed += 1;
+    }
+  }
+
+  const hasContainedArea = detectContainedArea(level, levees);
+  const waterActive = placed >= level.wallBudget && hasContainedArea;
+
+  if (!waterActive) {
+    return {
+      flooded,
+      score: 0,
+      dryLand: 0,
+      waterActive,
+      hasContainedArea,
+    };
+  }
 
   const queue = new Int32Array(total);
   let head = 0;
@@ -72,7 +94,7 @@ export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uin
     score -= adjacentHomeCount(d.x, d.y, level.width, level.height, districtByIndex);
   }
 
-  return { flooded, score, dryLand };
+  return { flooded, score, dryLand, waterActive, hasContainedArea };
 
   function visit(nx: number, ny: number): void {
     if (nx < 0 || ny < 0 || nx >= level.width || ny >= level.height) {
@@ -86,6 +108,58 @@ export function runSimulation(level: LevelData, levees: Uint8Array, buffer?: Uin
       return;
     }
     flooded[ni] = 1;
+    queue[tail++] = ni;
+  }
+}
+
+function detectContainedArea(level: LevelData, levees: Uint8Array): boolean {
+  const total = level.width * level.height;
+  const reachable = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+
+  for (let i = 0; i < total; i += 1) {
+    const x = i % level.width;
+    const y = Math.floor(i / level.width);
+    const isBoundary = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
+    if (!isBoundary || level.tiles[i] === TileType.ROCK || levees[i] !== 0) {
+      continue;
+    }
+    reachable[i] = 1;
+    queue[tail++] = i;
+  }
+
+  while (head < tail) {
+    const i = queue[head++];
+    const x = i % level.width;
+    const y = Math.floor(i / level.width);
+    walk(x + 1, y);
+    walk(x - 1, y);
+    walk(x, y + 1);
+    walk(x, y - 1);
+  }
+
+  for (let i = 0; i < total; i += 1) {
+    if (level.tiles[i] === TileType.ROCK || levees[i] !== 0) {
+      continue;
+    }
+    if (reachable[i] === 0) {
+      return true;
+    }
+  }
+
+  return false;
+
+  function walk(nx: number, ny: number): void {
+    if (nx < 0 || ny < 0 || nx >= level.width || ny >= level.height) {
+      return;
+    }
+    const ni = ny * level.width + nx;
+    if (reachable[ni] === 1 || level.tiles[ni] === TileType.ROCK || levees[ni] !== 0) {
+      return;
+    }
+    reachable[ni] = 1;
     queue[tail++] = ni;
   }
 }

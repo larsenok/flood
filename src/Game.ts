@@ -100,9 +100,6 @@ export class Game {
     }
     this.pushHistory();
     this.levees[i] = this.levees[i] === 1 ? 0 : 1;
-    if (this.levees[i] === 1) {
-      this.renderer.addBuildAnimation(i, performance.now());
-    }
     this.recompute();
   }
 
@@ -158,6 +155,8 @@ export class Game {
       score: this.sim.score,
       floodedTiles: this.countFlooded(),
       totalTiles: this.level.width * this.level.height,
+      waterActive: this.sim.waterActive,
+      hasContainedArea: this.sim.hasContainedArea,
       hoverX: this.input.state.hoverX,
       hoverY: this.input.state.hoverY,
       timeMs: now,
