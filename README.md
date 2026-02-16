@@ -1,6 +1,6 @@
 # Flood Control Engineer
 
-A daily browser puzzle where you place limited levee segments to keep districts dry while still preserving a drainage route to outflow.
+A daily browser puzzle where water pushes in from the map boundary and rivers, and you place limited levees to save the largest dry area and protect key districts.
 
 ## Tech
 - TypeScript
@@ -26,4 +26,4 @@ Vite outputs production files to `dist/`, which can be deployed directly to Verc
 - **Z**: undo
 - **N**: new daily level
 
-Top bar shows level date, placements remaining, score, and drainage status.
+Top bar shows level date, placements remaining, score, and flood coverage percent.
