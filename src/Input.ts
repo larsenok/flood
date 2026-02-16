@@ -7,9 +7,10 @@ export interface InputCallbacks {
   onCellPrimary: (x: number, y: number) => void;
   onRestart: () => void;
   onUndo: () => void;
+  onNewMap: () => void;
 }
 
-export type UiAction = 'restart' | 'undo';
+export type UiAction = 'restart' | 'undo' | 'new_map';
 
 export class InputController {
   state: InputState = { hoverX: -1, hoverY: -1 };
@@ -77,6 +78,7 @@ export class InputController {
     }
     if (action === 'restart') this.callbacks.onRestart();
     else if (action === 'undo') this.callbacks.onUndo();
+    else if (action === 'new_map') this.callbacks.onNewMap();
     return true;
   }
 
@@ -87,6 +89,10 @@ export class InputController {
     }
     if (ev.key === 'z' || ev.key === 'Z') {
       this.callbacks.onUndo();
+      return;
+    }
+    if (ev.key === 'n' || ev.key === 'N') {
+      this.callbacks.onNewMap();
       return;
     }
   };

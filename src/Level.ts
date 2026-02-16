@@ -63,9 +63,15 @@ export function parseLevel(raw: RawLevel, date: string): LevelData {
     }
   }
 
-  const districts = (raw.districts ?? []).filter(
-    (d) => d.x >= 0 && d.x < width && d.y >= 0 && d.y < height,
-  );
+  const districts = (raw.districts ?? []).filter((d) => {
+    if (d.x < 0 || d.x >= width || d.y < 0 || d.y >= height) {
+      return false;
+    }
+    if (d.type === 'HOSPITAL' && tiles[d.y * width + d.x] === TileType.ROCK) {
+      return false;
+    }
+    return true;
+  });
 
   return {
     date: raw.date ?? date,
