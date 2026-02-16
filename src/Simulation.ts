@@ -147,6 +147,18 @@ function detectContainedArea(level: LevelData, levees: Uint8Array): boolean {
     walk(x, y - 1);
   }
 
+  const homeDistricts = level.districts.filter((district) => district.type === 'HOME');
+  if (homeDistricts.length > 0) {
+    for (let i = 0; i < homeDistricts.length; i += 1) {
+      const district = homeDistricts[i];
+      const districtIndex = district.y * level.width + district.x;
+      if (reachable[districtIndex] === 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   for (let i = 0; i < total; i += 1) {
     if (blocked[i] === 1) {
       continue;
