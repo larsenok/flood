@@ -17,6 +17,8 @@ export class Game {
   private history: Snapshot[] = [];
   private readonly maxHistory = 10;
   private raf = 0;
+  private displayedFlooded = new Uint8Array(0);
+  private floodAnimStartMs = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderer: Renderer) {}
 
@@ -28,9 +30,6 @@ export class Game {
         onCellPrimary: (x, y) => this.toggleLevee(x, y),
         onRestart: () => this.restart(),
         onUndo: () => this.undo(),
-        onNewGame: () => {
-          void this.loadLevel(toDateKey());
-        },
       },
       (px, py) => this.renderer.getCellAt(this.level, px, py),
       (px, py) => this.renderer.getUiActionAt(px, py),
@@ -49,6 +48,7 @@ export class Game {
   private async loadLevel(dateKey = toDateKey()): Promise<void> {
     this.level = await loadDailyLevel(dateKey);
     this.levees = new Uint8Array(this.level.width * this.level.height);
+    this.displayedFlooded = new Uint8Array(this.level.width * this.level.height);
     this.history = [];
     this.applyHashState();
     this.recompute();
@@ -121,10 +121,10 @@ export class Game {
   }
 
 
-  private countFlooded(): number {
+  private countFlooded(cells: Uint8Array): number {
     let count = 0;
-    for (let i = 0; i < this.sim.flooded.length; i += 1) {
-      if (this.sim.flooded[i] === 1) {
+    for (let i = 0; i < cells.length; i += 1) {
+      if (cells[i] === 1) {
         count += 1;
       }
     }
@@ -133,6 +133,8 @@ export class Game {
 
   private recompute(): void {
     this.sim = runSimulation(this.level, this.levees, this.sim?.flooded);
+    this.floodAnimStartMs = performance.now();
+    this.displayedFlooded.fill(0);
     this.updateHash();
   }
 
@@ -149,18 +151,36 @@ export class Game {
 
   private tick = (): void => {
     const now = performance.now();
-    this.renderer.render(this.level, this.levees, this.sim.flooded, {
+    const animatedFlooded = this.getAnimatedFlooded(now);
+    this.renderer.render(this.level, this.levees, animatedFlooded, {
       levelLabel: this.level.date,
+      wallBudget: this.level.wallBudget,
       placementsRemaining: this.level.wallBudget - this.countPlaced(),
       score: this.sim.score,
-      floodedTiles: this.countFlooded(),
+      floodedTiles: this.countFlooded(animatedFlooded),
       totalTiles: this.level.width * this.level.height,
-      waterActive: this.sim.waterActive,
-      hasContainedArea: this.sim.hasContainedArea,
       hoverX: this.input.state.hoverX,
       hoverY: this.input.state.hoverY,
       timeMs: now,
     });
     this.raf = requestAnimationFrame(this.tick);
   };
+
+  private getAnimatedFlooded(now: number): Uint8Array {
+    if (!this.sim.waterActive || this.sim.floodOrder.length === 0) {
+      this.displayedFlooded.fill(0);
+      return this.displayedFlooded;
+    }
+    const elapsed = now - this.floodAnimStartMs;
+    const cellsPerSecond = 180;
+    const revealCount = Math.min(
+      this.sim.floodOrder.length,
+      Math.floor((elapsed / 1000) * cellsPerSecond) + 1,
+    );
+    this.displayedFlooded.fill(0);
+    for (let i = 0; i < revealCount; i += 1) {
+      this.displayedFlooded[this.sim.floodOrder[i]] = 1;
+    }
+    return this.displayedFlooded;
+  }
 }
