@@ -20,12 +20,14 @@ export async function loadDailyLevel(dateKey = toDateKey()): Promise<LevelData> 
     const response = await fetch(`/levels/${dateKey}.json`);
     if (response.ok) {
       const raw = (await response.json()) as RawLevel;
-      return normalizeForSandbagFlow(parseLevel(raw, dateKey));
+      const parsed = normalizeForSandbagFlow(parseLevel(raw, dateKey));
+      return { ...parsed, wallBudget: sandbagBudgetForDate(dateKey) };
     }
   } catch {
     // fallback to generator
   }
-  return normalizeForSandbagFlow(generateLevel(dateKey));
+  const generated = normalizeForSandbagFlow(generateLevel(dateKey));
+  return { ...generated, wallBudget: sandbagBudgetForDate(dateKey) };
 }
 
 function normalizeForSandbagFlow(level: LevelData): LevelData {
@@ -39,6 +41,12 @@ function normalizeForSandbagFlow(level: LevelData): LevelData {
     ...level,
     tiles,
   };
+}
+
+
+function sandbagBudgetForDate(dateKey: string): number {
+  const rng = new SeededRng(hashStringToInt(`${dateKey}-sandbags`));
+  return rng.int(16, 19);
 }
 
 function generateLevel(dateKey: string): LevelData {
@@ -101,7 +109,7 @@ function generateLevel(dateKey: string): LevelData {
     date: dateKey,
     width,
     height,
-    wallBudget: 16,
+    wallBudget: sandbagBudgetForDate(dateKey),
     tiles,
     districts,
   };

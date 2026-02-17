@@ -36,7 +36,6 @@ export class Renderer {
   private readonly buttons = [
     { key: 'restart', label: 'Restart (R)' },
     { key: 'undo', label: 'Undo (Z)' },
-    { key: 'new_map', label: 'New map (N)' },
   ] as const;
   private readonly ctx: CanvasRenderingContext2D;
   private dpr = 1;
