@@ -12,6 +12,7 @@ interface UiHitTarget {
 
 export interface UiState {
   levelLabel: string;
+  displayDate: string;
   wallBudget: number;
   placementsRemaining: number;
   score: number;
@@ -27,6 +28,8 @@ export interface UiState {
   leaderboardEntries: LeaderboardEntry[];
   scoreSubmitted: boolean;
   scoreSubmitting: boolean;
+  submitModalOpen: boolean;
+  submitNameDraft: string;
 }
 
 export class Renderer {
@@ -116,8 +119,9 @@ export class Renderer {
     this.drawLeaderboardToggle(ui);
     this.drawBottomActions(ui);
     if (ui.leaderboardOpen) this.drawLeaderboardPanel(ui);
+    if (ui.submitModalOpen) this.drawSubmitModal(ui);
 
-    if (ui.hoverX >= 0) {
+    if (ui.hoverX >= 0 && !ui.submitModalOpen) {
       ctx.strokeStyle = '#f3f6ff';
       ctx.lineWidth = 2;
       ctx.strokeRect(this.offsetX + ui.hoverX * this.gridSize + 1, this.offsetY + ui.hoverY * this.gridSize + 1, this.gridSize - 2, this.gridSize - 2);
@@ -142,6 +146,11 @@ export class Renderer {
     const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
     ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
     ctx.fillText(`Flooded ${floodedPct}%`, 250, 45);
+
+    ctx.fillStyle = '#e6eeff';
+    ctx.font = '600 13px Inter, system-ui, sans-serif';
+    const textWidth = ctx.measureText(ui.displayDate).width;
+    ctx.fillText(ui.displayDate, this.width - textWidth - 18, 33);
   }
 
   private drawTile(type: number, x: number, y: number, size: number, flooded: boolean, isBoundary: boolean, timeMs: number): void {
@@ -314,7 +323,8 @@ export class Renderer {
   private drawBottomActions(ui: UiState): void {
     if (!ui.hasContainedArea) return;
     const label = ui.scoreSubmitting ? 'Submitting…' : ui.scoreSubmitted ? 'Score submitted' : 'Submit score';
-    this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, ui.scoreSubmitted ? 'toggle_leaderboard' : 'submit_score', ui.scoreSubmitted ? '#28426c' : '#2b5f3e');
+    const action: UiAction = ui.scoreSubmitted ? 'toggle_leaderboard' : 'submit_score';
+    this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, action, ui.scoreSubmitted ? '#28426c' : '#2b5f3e');
   }
 
   private drawLeaderboardToggle(ui: UiState): void {
@@ -324,41 +334,121 @@ export class Renderer {
 
   private drawLeaderboardPanel(ui: UiState): void {
     const ctx = this.ctx;
-    const panelW = Math.min(520, this.width - 120);
-    const panelH = Math.min(420, this.height - 140);
+    const panelW = Math.min(450, this.width - 140);
+    const panelH = Math.min(410, this.height - 150);
     const x = this.width - panelW - 20;
     const y = 112;
-    ctx.fillStyle = 'rgba(8, 12, 20, 0.94)';
-    roundRect(ctx, x, y, panelW, panelH, 14);
+    const colRank = x + 18;
+    const colWho = x + 56;
+    const colScore = x + 130;
+    const colFlood = x + 208;
+    const colBags = x + 282;
+    const colTime = x + 356;
+
+    const headerY = y + 50;
+    const bodyTop = y + 62;
+
+    ctx.fillStyle = 'rgba(34, 45, 64, 0.95)';
+    roundRect(ctx, x, y, panelW, panelH, 12);
     ctx.fill();
-    ctx.strokeStyle = '#39527c';
+    ctx.strokeStyle = '#7f9ed1';
     ctx.stroke();
 
-    ctx.fillStyle = '#dce7ff';
+    ctx.fillStyle = '#edf3ff';
     ctx.font = '600 16px Inter, system-ui, sans-serif';
     ctx.fillText('Flood Leaderboard', x + 16, y + 28);
-    ctx.font = '500 12px Inter, system-ui, sans-serif';
-    ctx.fillText('#  Nick  Score  Flood%  Bags  Time', x + 16, y + 48);
+
+    ctx.font = '600 12px Inter, system-ui, sans-serif';
+    ctx.fillText('#', colRank, headerY);
+    ctx.fillText('Who', colWho, headerY);
+    ctx.fillText('Score', colScore, headerY);
+    ctx.fillText('Flood%', colFlood, headerY);
+    ctx.fillText('Bags', colBags, headerY);
+    ctx.fillText('Time', colTime, headerY);
+
+    ctx.strokeStyle = 'rgba(170, 197, 240, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 12, bodyTop);
+    ctx.lineTo(x + panelW - 12, bodyTop);
+    ctx.stroke();
+
+    const separators = [colWho - 12, colScore - 12, colFlood - 12, colBags - 12, colTime - 12];
+    for (const sx of separators) {
+      ctx.beginPath();
+      ctx.moveTo(sx, y + 38);
+      ctx.lineTo(sx, y + panelH - 14);
+      ctx.stroke();
+    }
 
     if (ui.leaderboardLoading) {
-      ctx.fillText('Loading leaderboard…', x + 16, y + 74);
+      ctx.fillStyle = '#dbe7ff';
+      ctx.fillText('Loading leaderboard…', x + 16, y + 86);
       return;
     }
     if (ui.leaderboardError) {
-      ctx.fillStyle = '#ff9c9c';
-      ctx.fillText(ui.leaderboardError, x + 16, y + 74);
+      ctx.fillStyle = '#ffb5b5';
+      ctx.fillText(ui.leaderboardError, x + 16, y + 86);
       return;
     }
 
-    let rowY = y + 74;
-    for (let i = 0; i < Math.min(12, ui.leaderboardEntries.length); i += 1) {
+    let rowY = y + 86;
+    const maxRows = Math.min(11, ui.leaderboardEntries.length);
+    for (let i = 0; i < maxRows; i += 1) {
       const e = ui.leaderboardEntries[i];
       const sec = Math.round(e.time_spent_ms / 1000);
-      const line = `${String(i + 1).padStart(2, ' ')}  ${e.nickname.padEnd(4, ' ')}  ${String(e.score).padStart(5, ' ')}  ${String(e.flooded_pct).padStart(5, ' ')}  ${String(e.bags_used).padStart(4, ' ')}/${e.wall_budget}  ${sec}s`;
-      ctx.fillStyle = i % 2 === 0 ? '#dce7ff' : '#b9caef';
-      ctx.fillText(line, x + 16, rowY);
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+        ctx.fillRect(x + 12, rowY - 14, panelW - 24, 20);
+      }
+      ctx.fillStyle = '#eaf1ff';
+      ctx.font = '500 12px Inter, system-ui, sans-serif';
+      ctx.fillText(String(i + 1), colRank, rowY);
+      ctx.fillText(e.nickname, colWho, rowY);
+      ctx.fillText(String(e.score), colScore, rowY);
+      ctx.fillText(String(e.flooded_pct), colFlood, rowY);
+      ctx.fillText(`${e.bags_used}/${e.wall_budget}`, colBags, rowY);
+      ctx.fillText(`${sec}s`, colTime, rowY);
       rowY += 24;
     }
+  }
+
+  private drawSubmitModal(ui: UiState): void {
+    const ctx = this.ctx;
+    const overlay = 'rgba(8, 12, 20, 0.52)';
+    const modalW = Math.min(320, this.width - 40);
+    const modalH = 168;
+    const x = (this.width - modalW) * 0.5;
+    const y = (this.height - modalH) * 0.5;
+
+    ctx.fillStyle = overlay;
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    ctx.fillStyle = '#2c3f5f';
+    roundRect(ctx, x, y, modalW, modalH, 12);
+    ctx.fill();
+    ctx.strokeStyle = '#8db2e6';
+    ctx.stroke();
+
+    ctx.fillStyle = '#eff5ff';
+    ctx.font = '600 16px Inter, system-ui, sans-serif';
+    ctx.fillText('Submit score', x + 16, y + 28);
+    ctx.font = '500 13px Inter, system-ui, sans-serif';
+    ctx.fillText('Who (3 letters)', x + 16, y + 56);
+
+    ctx.fillStyle = '#122137';
+    roundRect(ctx, x + 16, y + 64, modalW - 32, 38, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#5c7faf';
+    ctx.stroke();
+
+    const value = ui.submitNameDraft || '___';
+    ctx.fillStyle = '#e8f1ff';
+    ctx.font = '600 22px monospace';
+    ctx.fillText(value.padEnd(3, '_').slice(0, 3), x + 26, y + 90);
+
+    this.drawButton(x + 16, y + modalH - 48, 98, 30, 'Cancel', 'submit_score_cancel', '#37475f');
+    this.drawButton(x + modalW - 114, y + modalH - 48, 98, 30, ui.scoreSubmitting ? 'Saving…' : 'Submit', 'submit_score_confirm', '#2d6e4a');
   }
 
   private drawButton(x: number, y: number, width: number, height: number, label: string, key: UiAction, fill = '#1b2538'): void {

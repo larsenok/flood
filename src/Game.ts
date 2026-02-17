@@ -4,7 +4,7 @@ import { LevelData, TileType, idx } from './Level';
 import { loadDailyLevel, loadRandomLevel } from './LevelLoader';
 import { Renderer } from './Renderer';
 import { SimResult, runSimulation } from './Simulation';
-import { toDateKey } from './utils';
+import { formatDisplayDate, toDateKey } from './utils';
 
 interface Snapshot {
   levees: Uint8Array;
@@ -29,6 +29,8 @@ export class Game {
   private leaderboardLoading = false;
   private leaderboardError: string | null = null;
   private leaderboardEntries: LeaderboardEntry[] = [];
+  private submitModalOpen = false;
+  private submitNameDraft = '';
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderer: Renderer) {}
 
@@ -41,9 +43,12 @@ export class Game {
         onRestart: () => this.restart(),
         onUndo: () => this.undo(),
         onNewMap: () => this.newMap(),
-        onSubmitScore: () => void this.handleSubmitScore(),
+        onSubmitScore: () => this.openSubmitModal(),
+        onSubmitScoreConfirm: () => void this.handleSubmitScore(),
+        onSubmitScoreCancel: () => this.closeSubmitModal(),
         onToggleLeaderboard: () => void this.toggleLeaderboard(),
         onCloseLeaderboard: () => this.closeLeaderboard(),
+        onKeyDown: (ev) => this.onKeyDown(ev),
       },
       (px, py) => this.renderer.getCellAt(this.level, px, py),
       (px, py) => this.renderer.getUiActionAt(px, py),
@@ -67,7 +72,7 @@ export class Game {
   }
 
   private async newMap(): Promise<void> {
-    this.level = await loadRandomLevel();
+    this.level = await loadRandomLevel(toDateKey());
     this.resetBoardState();
     this.recompute();
   }
@@ -82,6 +87,8 @@ export class Game {
     this.scoreSubmitted = false;
     this.leaderboardOpen = false;
     this.leaderboardError = null;
+    this.submitModalOpen = false;
+    this.submitNameDraft = '';
   }
 
   private applyHashState(): void {
@@ -107,6 +114,8 @@ export class Game {
     this.history = [];
     this.firstPlacementAtMs = null;
     this.scoreSubmitted = false;
+    this.submitModalOpen = false;
+    this.submitNameDraft = '';
     this.recompute();
   }
 
@@ -131,6 +140,7 @@ export class Game {
   }
 
   private toggleLevee(x: number, y: number): void {
+    if (this.submitModalOpen) return;
     const i = idx(x, y, this.level.width);
     if (!this.canPlaceAtIndex(i)) return;
     const placed = this.countPlaced();
@@ -149,10 +159,19 @@ export class Game {
     this.recompute();
   }
 
-  private async handleSubmitScore(): Promise<void> {
+  private openSubmitModal(): void {
     if (!this.sim.hasContainedArea || this.scoreSubmitting || this.scoreSubmitted) return;
-    const nicknameInput = window.prompt('Enter 3-letter nickname (blank = ANON):', '');
-    const nickname = this.normalizeNickname(nicknameInput ?? '');
+    this.submitNameDraft = this.submitNameDraft.slice(0, 3);
+    this.submitModalOpen = true;
+  }
+
+  private closeSubmitModal(): void {
+    this.submitModalOpen = false;
+  }
+
+  private async handleSubmitScore(): Promise<void> {
+    if (!this.submitModalOpen || !this.sim.hasContainedArea || this.scoreSubmitting || this.scoreSubmitted) return;
+    const nickname = this.normalizeNickname(this.submitNameDraft);
     this.scoreSubmitting = true;
     this.leaderboardError = null;
     try {
@@ -174,6 +193,7 @@ export class Game {
         time_spent_ms: elapsedMs,
       });
       this.scoreSubmitted = true;
+      this.submitModalOpen = false;
       await this.loadLeaderboard();
       this.leaderboardOpen = true;
     } catch (err) {
@@ -181,6 +201,29 @@ export class Game {
     } finally {
       this.scoreSubmitting = false;
     }
+  }
+
+  private onKeyDown(ev: KeyboardEvent): boolean {
+    if (!this.submitModalOpen) {
+      return false;
+    }
+    if (ev.key === 'Escape') {
+      this.closeSubmitModal();
+      return true;
+    }
+    if (ev.key === 'Enter') {
+      void this.handleSubmitScore();
+      return true;
+    }
+    if (ev.key === 'Backspace') {
+      this.submitNameDraft = this.submitNameDraft.slice(0, -1);
+      return true;
+    }
+    if (/^[a-zA-Z]$/.test(ev.key) && this.submitNameDraft.length < 3) {
+      this.submitNameDraft += ev.key.toUpperCase();
+      return true;
+    }
+    return true;
   }
 
   private normalizeNickname(raw: string): string {
@@ -201,7 +244,7 @@ export class Game {
     this.leaderboardLoading = true;
     this.leaderboardError = null;
     try {
-      this.leaderboardEntries = await fetchLeaderboard();
+      this.leaderboardEntries = await fetchLeaderboard(this.level.date);
     } catch (err) {
       this.leaderboardError = err instanceof Error ? err.message : 'Failed to load leaderboard';
     } finally {
@@ -245,6 +288,7 @@ export class Game {
     const animatedFlooded = this.getAnimatedFlooded(now);
     this.renderer.render(this.level, this.levees, this.leveePlacedAtMs, animatedFlooded, {
       levelLabel: this.level.date,
+      displayDate: formatDisplayDate(this.level.date),
       wallBudget: this.level.wallBudget,
       placementsRemaining: this.level.wallBudget - this.countPlaced(),
       score: this.sim.score,
@@ -260,6 +304,8 @@ export class Game {
       leaderboardEntries: this.leaderboardEntries,
       scoreSubmitted: this.scoreSubmitted,
       scoreSubmitting: this.scoreSubmitting,
+      submitModalOpen: this.submitModalOpen,
+      submitNameDraft: this.submitNameDraft,
     });
     this.raf = requestAnimationFrame(this.tick);
   };
