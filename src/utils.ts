@@ -31,6 +31,14 @@ export function toDateKey(date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+export function formatDisplayDate(date = new Date()): string {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = date.toLocaleString('en-US', { month: 'short' });
+  const year = date.getFullYear();
+  return `${day}/${month}-${year}`;
+}
+
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
