@@ -29,6 +29,7 @@ export class Game {
   private leaderboardLoading = false;
   private leaderboardError: string | null = null;
   private leaderboardEntries: LeaderboardEntry[] = [];
+  private nicknameDialog: HTMLDivElement | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderer: Renderer) {}
 
@@ -56,6 +57,7 @@ export class Game {
   destroy(): void {
     cancelAnimationFrame(this.raf);
     this.input.destroy();
+    this.removeNicknameDialog();
     window.removeEventListener('resize', this.onResize);
   }
 
@@ -151,8 +153,9 @@ export class Game {
 
   private async handleSubmitScore(): Promise<void> {
     if (!this.sim.hasContainedArea || this.scoreSubmitting || this.scoreSubmitted) return;
-    const nicknameInput = window.prompt('Enter 3-letter nickname (blank = ANON):', '');
-    const nickname = this.normalizeNickname(nicknameInput ?? '');
+    const nicknameInput = await this.promptNickname();
+    if (nicknameInput === null) return;
+    const nickname = this.normalizeNickname(nicknameInput);
     this.scoreSubmitting = true;
     this.leaderboardError = null;
     try {
@@ -183,6 +186,122 @@ export class Game {
     }
   }
 
+
+  private async promptNickname(): Promise<string | null> {
+    this.removeNicknameDialog();
+    const host = this.canvas.parentElement ?? document.body;
+    const dialog = document.createElement('div');
+    dialog.style.position = 'fixed';
+    dialog.style.inset = '0';
+    dialog.style.display = 'flex';
+    dialog.style.alignItems = 'center';
+    dialog.style.justifyContent = 'center';
+    dialog.style.background = 'rgba(5, 10, 18, 0.66)';
+    dialog.style.zIndex = '50';
+
+    const card = document.createElement('div');
+    card.style.width = 'min(320px, calc(100vw - 40px))';
+    card.style.padding = '16px';
+    card.style.borderRadius = '12px';
+    card.style.background = '#101b2f';
+    card.style.border = '1px solid #39527c';
+    card.style.boxShadow = '0 12px 30px rgba(0, 0, 0, 0.4)';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Submit score';
+    title.style.margin = '0 0 8px';
+    title.style.color = '#dce7ff';
+    title.style.font = '600 16px Inter, system-ui, sans-serif';
+
+    const note = document.createElement('p');
+    note.textContent = 'Enter 3-letter nickname (blank = ANON)';
+    note.style.margin = '0 0 12px';
+    note.style.color = '#b9caef';
+    note.style.font = '500 12px Inter, system-ui, sans-serif';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 3;
+    input.autocomplete = 'off';
+    input.style.width = '100%';
+    input.style.boxSizing = 'border-box';
+    input.style.padding = '10px';
+    input.style.borderRadius = '8px';
+    input.style.border = '1px solid #314766';
+    input.style.background = '#0a1222';
+    input.style.color = '#dce7ff';
+    input.style.font = '600 14px Inter, system-ui, sans-serif';
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.gap = '8px';
+    actions.style.marginTop = '12px';
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.style.padding = '8px 12px';
+    cancel.style.borderRadius = '8px';
+    cancel.style.border = '1px solid #3b4f70';
+    cancel.style.background = '#19263d';
+    cancel.style.color = '#dce7ff';
+    cancel.style.cursor = 'pointer';
+
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.textContent = 'Submit';
+    submit.style.padding = '8px 12px';
+    submit.style.borderRadius = '8px';
+    submit.style.border = '1px solid #357750';
+    submit.style.background = '#2b5f3e';
+    submit.style.color = '#e7ffe7';
+    submit.style.cursor = 'pointer';
+
+    actions.append(cancel, submit);
+    card.append(title, note, input, actions);
+    dialog.append(card);
+    host.append(dialog);
+    this.nicknameDialog = dialog;
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    input.focus();
+
+    return await new Promise<string | null>((resolve) => {
+      let finished = false;
+      const finish = (value: string | null): void => {
+        if (finished) return;
+        finished = true;
+        document.removeEventListener('keydown', onKeyDown);
+        this.removeNicknameDialog();
+        resolve(value);
+      };
+
+      const onKeyDown = (event: KeyboardEvent): void => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finish(null);
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          finish(input.value);
+        }
+      };
+
+      document.addEventListener('keydown', onKeyDown);
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) finish(null);
+      });
+      cancel.addEventListener('click', () => finish(null));
+      submit.addEventListener('click', () => finish(input.value));
+    });
+  }
+
+  private removeNicknameDialog(): void {
+    if (!this.nicknameDialog) return;
+    this.nicknameDialog.remove();
+    this.nicknameDialog = null;
+  }
+
   private normalizeNickname(raw: string): string {
     const cleaned = raw.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
     return cleaned.length > 0 ? cleaned.padEnd(3, 'X') : 'ANON';
@@ -201,7 +320,7 @@ export class Game {
     this.leaderboardLoading = true;
     this.leaderboardError = null;
     try {
-      this.leaderboardEntries = await fetchLeaderboard();
+      this.leaderboardEntries = await fetchLeaderboard(this.level.date);
     } catch (err) {
       this.leaderboardError = err instanceof Error ? err.message : 'Failed to load leaderboard';
     } finally {
@@ -245,6 +364,7 @@ export class Game {
     const animatedFlooded = this.getAnimatedFlooded(now);
     this.renderer.render(this.level, this.levees, this.leveePlacedAtMs, animatedFlooded, {
       levelLabel: this.level.date,
+      isNarrowScreen: window.innerWidth <= 640,
       wallBudget: this.level.wallBudget,
       placementsRemaining: this.level.wallBudget - this.countPlaced(),
       score: this.sim.score,

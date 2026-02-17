@@ -12,6 +12,7 @@ interface UiHitTarget {
 
 export interface UiState {
   levelLabel: string;
+  isNarrowScreen: boolean;
   wallBudget: number;
   placementsRemaining: number;
   score: number;
@@ -81,14 +82,15 @@ export class Renderer {
     ctx.fillStyle = '#87b678';
     ctx.fillRect(0, 0, this.width, this.height);
 
-    const topBarH = 56;
-    const legendH = 30;
-    const pad = 24;
-    const availableW = this.width - pad * 2;
-    const availableH = this.height - topBarH - legendH - pad * 2;
+    const topBarH = ui.isNarrowScreen ? 76 : 56;
+    const boardToggleY = ui.isNarrowScreen ? topBarH + 8 : 76;
+    const padX = ui.isNarrowScreen ? 10 : 24;
+    const padBottom = ui.isNarrowScreen ? 76 : 24;
+    const availableW = this.width - padX * 2;
+    const availableH = this.height - topBarH - padBottom;
     this.gridSize = Math.floor(Math.min(availableW / level.width, availableH / level.height));
     this.offsetX = Math.floor((this.width - this.gridSize * level.width) * 0.5);
-    this.offsetY = topBarH + Math.floor((this.height - topBarH - legendH - this.gridSize * level.height) * 0.5);
+    this.offsetY = topBarH + Math.floor((this.height - topBarH - this.gridSize * level.height - padBottom) * 0.5);
 
     this.drawTopBar(ui);
 
@@ -111,9 +113,8 @@ export class Renderer {
     }
 
     this.drawGrid(level);
-    this.drawLegend(topBarH + 6);
-    this.drawButtons();
-    this.drawLeaderboardToggle(ui);
+    this.drawButtons(ui);
+    this.drawLeaderboardToggle(ui, boardToggleY);
     this.drawBottomActions(ui);
     if (ui.leaderboardOpen) this.drawLeaderboardPanel(ui);
 
@@ -126,8 +127,9 @@ export class Renderer {
 
   private drawTopBar(ui: UiState): void {
     const ctx = this.ctx;
+    const topBarHeight = ui.isNarrowScreen ? 76 : 56;
     ctx.fillStyle = '#0a1222';
-    ctx.fillRect(0, 0, this.width, 56);
+    ctx.fillRect(0, 0, this.width, topBarHeight);
     ctx.fillStyle = '#dbe5ff';
     ctx.font = '600 15px Inter, system-ui, sans-serif';
     ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
@@ -137,11 +139,12 @@ export class Renderer {
 
     ctx.fillStyle = '#dbe5ff';
     ctx.font = '500 14px Inter, system-ui, sans-serif';
-    ctx.fillText(`Score ${ui.score}`, 150, 45);
+    const statsY = ui.isNarrowScreen ? 66 : 45;
+    ctx.fillText(`Score ${ui.score}`, 150, statsY);
 
     const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
     ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
-    ctx.fillText(`Flooded ${floodedPct}%`, 250, 45);
+    ctx.fillText(`Flooded ${floodedPct}%`, ui.isNarrowScreen ? 238 : 250, statsY);
   }
 
   private drawTile(type: number, x: number, y: number, size: number, flooded: boolean, isBoundary: boolean, timeMs: number): void {
@@ -282,32 +285,19 @@ export class Renderer {
     }
   }
 
-  private drawLegend(y: number): void {
-    const ctx = this.ctx;
-    const items = [
-      { c: '#87b678', label: 'Dry land' },
-      { c: '#53b8ff', label: 'Flooded water' },
-      { c: '#d0b98d', label: 'Sandbag' },
-      { c: '#51586a', label: 'Mountain' },
-    ];
-    let x = 16;
-    ctx.font = '500 12px Inter, system-ui, sans-serif';
-    for (let i = 0; i < items.length; i += 1) {
-      ctx.fillStyle = items[i].c;
-      ctx.fillRect(x, y, 12, 12);
-      ctx.strokeStyle = '#111827';
-      ctx.strokeRect(x, y, 12, 12);
-      ctx.fillStyle = '#cdd8f3';
-      ctx.fillText(items[i].label, x + 18, y + 10);
-      x += 130;
-    }
-  }
 
-  private drawButtons(): void {
-    let x = this.width - (this.buttons.length * 118 + 6);
+
+  private drawButtons(ui: UiState): void {
+    const buttonWidth = ui.isNarrowScreen ? 92 : 110;
+    const buttonGap = ui.isNarrowScreen ? 6 : 8;
+    const buttonHeight = ui.isNarrowScreen ? 28 : 30;
+    const totalWidth = this.buttons.length * buttonWidth + (this.buttons.length - 1) * buttonGap;
+    let x = this.width - totalWidth - 12;
+    if (ui.isNarrowScreen) x = Math.max(x, 10);
+    const buttonY = ui.isNarrowScreen ? 84 : 12;
     for (let i = 0; i < this.buttons.length; i += 1) {
-      this.drawButton(x, 12, 110, 30, this.buttons[i].label, this.buttons[i].key);
-      x += 118;
+      this.drawButton(x, buttonY, buttonWidth, buttonHeight, this.buttons[i].label, this.buttons[i].key);
+      x += buttonWidth + buttonGap;
     }
   }
 
@@ -317,9 +307,11 @@ export class Renderer {
     this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, ui.scoreSubmitted ? 'toggle_leaderboard' : 'submit_score', ui.scoreSubmitted ? '#28426c' : '#2b5f3e');
   }
 
-  private drawLeaderboardToggle(ui: UiState): void {
+  private drawLeaderboardToggle(ui: UiState, y: number): void {
     const label = ui.leaderboardOpen ? 'Close board' : 'Leaderboard';
-    this.drawButton(this.width - 130, 76, 116, 30, label, ui.leaderboardOpen ? 'close_leaderboard' : 'toggle_leaderboard', '#24324b');
+    const x = this.width - (ui.isNarrowScreen ? 116 : 130);
+    const width = ui.isNarrowScreen ? 106 : 116;
+    this.drawButton(x, y, width, 30, label, ui.leaderboardOpen ? 'close_leaderboard' : 'toggle_leaderboard', '#24324b');
   }
 
   private drawLeaderboardPanel(ui: UiState): void {
@@ -337,6 +329,11 @@ export class Renderer {
     ctx.fillStyle = '#dce7ff';
     ctx.font = '600 16px Inter, system-ui, sans-serif';
     ctx.fillText('Flood Leaderboard', x + 16, y + 28);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#b9caef';
+    ctx.font = '500 12px Inter, system-ui, sans-serif';
+    ctx.fillText(ui.levelLabel, x + panelW - 16, y + 28);
+    ctx.textAlign = 'left';
     ctx.font = '500 12px Inter, system-ui, sans-serif';
     ctx.fillText('#  Nick  Score  Flood%  Bags  Time', x + 16, y + 48);
 
