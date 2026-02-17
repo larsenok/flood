@@ -4,7 +4,7 @@ import { LevelData, TileType, idx } from './Level';
 import { loadDailyLevel, loadRandomLevel } from './LevelLoader';
 import { Renderer } from './Renderer';
 import { SimResult, runSimulation } from './Simulation';
-import { toDateKey } from './utils';
+import { formatDisplayDate, toDateKey } from './utils';
 
 interface Snapshot {
   levees: Uint8Array;
@@ -30,6 +30,9 @@ export class Game {
   private leaderboardError: string | null = null;
   private leaderboardEntries: LeaderboardEntry[] = [];
   private nicknameDialog: HTMLDivElement | null = null;
+  private submittedFloodedPct: number | null = null;
+  private copyStatus = '';
+  private copyStatusUntil = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderer: Renderer) {}
 
@@ -43,6 +46,7 @@ export class Game {
         onUndo: () => this.undo(),
         onNewMap: () => this.newMap(),
         onSubmitScore: () => void this.handleSubmitScore(),
+        onCopyScore: () => void this.handleCopyScore(),
         onToggleLeaderboard: () => void this.toggleLeaderboard(),
         onCloseLeaderboard: () => this.closeLeaderboard(),
       },
@@ -69,7 +73,7 @@ export class Game {
   }
 
   private async newMap(): Promise<void> {
-    this.level = await loadRandomLevel();
+    this.level = await loadRandomLevel(`random-${toDateKey()}`);
     this.resetBoardState();
     this.recompute();
   }
@@ -84,6 +88,9 @@ export class Game {
     this.scoreSubmitted = false;
     this.leaderboardOpen = false;
     this.leaderboardError = null;
+    this.submittedFloodedPct = null;
+    this.copyStatus = '';
+    this.copyStatusUntil = 0;
   }
 
   private applyHashState(): void {
@@ -109,6 +116,9 @@ export class Game {
     this.history = [];
     this.firstPlacementAtMs = null;
     this.scoreSubmitted = false;
+    this.submittedFloodedPct = null;
+    this.copyStatus = '';
+    this.copyStatusUntil = 0;
     this.recompute();
   }
 
@@ -177,6 +187,9 @@ export class Game {
         time_spent_ms: elapsedMs,
       });
       this.scoreSubmitted = true;
+      this.submittedFloodedPct = floodedPct;
+      this.copyStatus = '';
+      this.copyStatusUntil = 0;
       await this.loadLeaderboard();
       this.leaderboardOpen = true;
     } catch (err) {
@@ -200,11 +213,11 @@ export class Game {
     dialog.style.zIndex = '50';
 
     const card = document.createElement('div');
-    card.style.width = 'min(320px, calc(100vw - 40px))';
+    card.style.width = 'min(292px, calc(100vw - 40px))';
     card.style.padding = '16px';
     card.style.borderRadius = '12px';
-    card.style.background = '#101b2f';
-    card.style.border = '1px solid #39527c';
+    card.style.background = '#172742';
+    card.style.border = '1px solid #4a699b';
     card.style.boxShadow = '0 12px 30px rgba(0, 0, 0, 0.4)';
 
     const title = document.createElement('h3');
@@ -214,7 +227,7 @@ export class Game {
     title.style.font = '600 16px Inter, system-ui, sans-serif';
 
     const note = document.createElement('p');
-    note.textContent = 'Enter 3-letter nickname (blank = ANON)';
+    note.textContent = 'Who? 3 letters (blank = ANON)';
     note.style.margin = '0 0 12px';
     note.style.color = '#b9caef';
     note.style.font = '500 12px Inter, system-ui, sans-serif';
@@ -228,9 +241,10 @@ export class Game {
     input.style.padding = '10px';
     input.style.borderRadius = '8px';
     input.style.border = '1px solid #314766';
-    input.style.background = '#0a1222';
+    input.style.background = '#0d1a2f';
     input.style.color = '#dce7ff';
     input.style.font = '600 14px Inter, system-ui, sans-serif';
+    input.style.appearance = 'none';
 
     const actions = document.createElement('div');
     actions.style.display = 'flex';
@@ -247,6 +261,7 @@ export class Game {
     cancel.style.background = '#19263d';
     cancel.style.color = '#dce7ff';
     cancel.style.cursor = 'pointer';
+    cancel.style.appearance = 'none';
 
     const submit = document.createElement('button');
     submit.type = 'button';
@@ -257,6 +272,7 @@ export class Game {
     submit.style.background = '#2b5f3e';
     submit.style.color = '#e7ffe7';
     submit.style.cursor = 'pointer';
+    submit.style.appearance = 'none';
 
     actions.append(cancel, submit);
     card.append(title, note, input, actions);
@@ -307,6 +323,32 @@ export class Game {
     return cleaned.length > 0 ? cleaned.padEnd(3, 'X') : 'ANON';
   }
 
+
+
+  private async handleCopyScore(): Promise<void> {
+    if (!this.scoreSubmitted || this.submittedFloodedPct === null) return;
+    const text = this.buildScoreShareText(this.submittedFloodedPct);
+    try {
+      await navigator.clipboard.writeText(text);
+      this.copyStatus = 'Copied';
+    } catch {
+      this.copyStatus = 'Copy failed';
+    }
+    this.copyStatusUntil = performance.now() + 2200;
+  }
+
+  private buildScoreShareText(floodedPct: number): string {
+    const hype = floodedPct <= 20
+      ? 'Absolute flood-stop legend.'
+      : floodedPct <= 40
+      ? 'Strong defense. Water got cooked.'
+      : floodedPct <= 60
+      ? 'Solid run—can you push it lower?'
+      : floodedPct <= 80
+      ? 'Chaos run. Still room to clutch it.'
+      : 'Full disaster mode. Redemption arc next run.';
+    return `Flood ${floodedPct}% (lower is better)\n${window.location.href}\n${hype}`;
+  }
   private async toggleLeaderboard(): Promise<void> {
     this.leaderboardOpen = !this.leaderboardOpen;
     if (this.leaderboardOpen && this.leaderboardEntries.length === 0) await this.loadLeaderboard();
@@ -364,6 +406,7 @@ export class Game {
     const animatedFlooded = this.getAnimatedFlooded(now);
     this.renderer.render(this.level, this.levees, this.leveePlacedAtMs, animatedFlooded, {
       levelLabel: this.level.date,
+      displayDateLabel: formatDisplayDate(),
       isNarrowScreen: window.innerWidth <= 640,
       wallBudget: this.level.wallBudget,
       placementsRemaining: this.level.wallBudget - this.countPlaced(),
@@ -380,6 +423,7 @@ export class Game {
       leaderboardEntries: this.leaderboardEntries,
       scoreSubmitted: this.scoreSubmitted,
       scoreSubmitting: this.scoreSubmitting,
+      copyStatus: now <= this.copyStatusUntil ? this.copyStatus : '',
     });
     this.raf = requestAnimationFrame(this.tick);
   };

@@ -58,8 +58,13 @@ export async function submitScore(payload: ScoreSubmission): Promise<void> {
 export async function fetchLeaderboard(levelDate: string, limit = 25): Promise<LeaderboardEntry[]> {
   const { url, anonKey } = getSupabaseConfig();
   const encodedLevelDate = encodeURIComponent(levelDate);
+  const today = new Date();
+  const nextDay = new Date(today);
+  nextDay.setDate(today.getDate() + 1);
+  const start = today.toISOString().slice(0, 10);
+  const end = nextDay.toISOString().slice(0, 10);
   const response = await fetch(
-    `${url}/rest/v1/flood_leaderboard?select=id,nickname,level_date,score,flooded_pct,bags_used,wall_budget,dry_land,flooded_tiles,total_tiles,time_spent_ms,created_at&level_date=eq.${encodedLevelDate}&order=score.desc,time_spent_ms.asc,created_at.asc&limit=${limit}`,
+    `${url}/rest/v1/flood_leaderboard?select=id,nickname,level_date,score,flooded_pct,bags_used,wall_budget,dry_land,flooded_tiles,total_tiles,time_spent_ms,created_at&level_date=eq.${encodedLevelDate}&created_at=gte.${start}T00:00:00Z&created_at=lt.${end}T00:00:00Z&order=score.desc,time_spent_ms.asc,created_at.asc&limit=${limit}`,
     {
       method: 'GET',
       headers: {

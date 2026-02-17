@@ -12,6 +12,7 @@ interface UiHitTarget {
 
 export interface UiState {
   levelLabel: string;
+  displayDateLabel: string;
   isNarrowScreen: boolean;
   wallBudget: number;
   placementsRemaining: number;
@@ -28,6 +29,7 @@ export interface UiState {
   leaderboardEntries: LeaderboardEntry[];
   scoreSubmitted: boolean;
   scoreSubmitting: boolean;
+  copyStatus: string;
 }
 
 export class Renderer {
@@ -133,6 +135,12 @@ export class Renderer {
     ctx.fillStyle = '#dbe5ff';
     ctx.font = '600 15px Inter, system-ui, sans-serif';
     ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#b9caef';
+    ctx.font = '600 13px Inter, system-ui, sans-serif';
+    ctx.fillText(ui.displayDateLabel, this.width - 16, 23);
+    ctx.textAlign = 'left';
 
     const used = Math.max(0, ui.wallBudget - ui.placementsRemaining);
     this.drawSandbagBadge(16, 30, 118, 20, used, ui.wallBudget);
@@ -303,8 +311,18 @@ export class Renderer {
 
   private drawBottomActions(ui: UiState): void {
     if (!ui.hasContainedArea) return;
-    const label = ui.scoreSubmitting ? 'Submitting…' : ui.scoreSubmitted ? 'Score submitted' : 'Submit score';
-    this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, ui.scoreSubmitted ? 'toggle_leaderboard' : 'submit_score', ui.scoreSubmitted ? '#28426c' : '#2b5f3e');
+    if (ui.scoreSubmitted) {
+      this.drawButton(this.width * 0.5 - 138, this.height - 54, 168, 34, 'Submitted', 'toggle_leaderboard', '#28426c');
+      this.drawButton(this.width * 0.5 + 38, this.height - 54, 106, 34, 'Copy score', 'copy_score', '#3a2d66');
+      if (ui.copyStatus) {
+        this.ctx.fillStyle = '#dce7ff';
+        this.ctx.font = '500 12px Inter, system-ui, sans-serif';
+        this.ctx.fillText(ui.copyStatus, this.width * 0.5 + 148, this.height - 33);
+      }
+      return;
+    }
+    const label = ui.scoreSubmitting ? 'Submitting…' : 'Submit score';
+    this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, 'submit_score', '#2b5f3e');
   }
 
   private drawLeaderboardToggle(ui: UiState, y: number): void {
@@ -316,46 +334,88 @@ export class Renderer {
 
   private drawLeaderboardPanel(ui: UiState): void {
     const ctx = this.ctx;
-    const panelW = Math.min(520, this.width - 120);
+    const panelW = Math.min(430, this.width - 120);
     const panelH = Math.min(420, this.height - 140);
     const x = this.width - panelW - 20;
     const y = 112;
-    ctx.fillStyle = 'rgba(8, 12, 20, 0.94)';
+    ctx.fillStyle = 'rgba(22, 33, 56, 0.97)';
     roundRect(ctx, x, y, panelW, panelH, 14);
     ctx.fill();
-    ctx.strokeStyle = '#39527c';
+    ctx.strokeStyle = '#5f82bd';
     ctx.stroke();
 
-    ctx.fillStyle = '#dce7ff';
+    ctx.fillStyle = '#e8f0ff';
     ctx.font = '600 16px Inter, system-ui, sans-serif';
     ctx.fillText('Flood Leaderboard', x + 16, y + 28);
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#b9caef';
+    ctx.fillStyle = '#c9d9ff';
     ctx.font = '500 12px Inter, system-ui, sans-serif';
     ctx.fillText(ui.levelLabel, x + panelW - 16, y + 28);
     ctx.textAlign = 'left';
-    ctx.font = '500 12px Inter, system-ui, sans-serif';
-    ctx.fillText('#  Nick  Score  Flood%  Bags  Time', x + 16, y + 48);
+
+    const columns = [
+      { title: '#', x: x + 16, align: 'left' as const },
+      { title: 'Who', x: x + 46, align: 'left' as const },
+      { title: 'Score', x: x + 126, align: 'left' as const },
+      { title: 'Flood%', x: x + 196, align: 'left' as const },
+      { title: 'Bags', x: x + 274, align: 'left' as const },
+      { title: 'Time', x: x + panelW - 16, align: 'right' as const },
+    ];
+    ctx.font = '600 12px Inter, system-ui, sans-serif';
+    ctx.fillStyle = '#cfe0ff';
+    for (const c of columns) {
+      ctx.textAlign = c.align;
+      ctx.fillText(c.title, c.x, y + 50);
+    }
+    ctx.textAlign = 'left';
+
+    ctx.strokeStyle = 'rgba(132, 168, 229, 0.35)';
+    ctx.lineWidth = 1;
+    const lineY = y + 58;
+    ctx.beginPath();
+    ctx.moveTo(x + 12, lineY);
+    ctx.lineTo(x + panelW - 12, lineY);
+    ctx.stroke();
+    const dividers = [x + 38, x + 116, x + 186, x + 264, x + panelW - 82];
+    for (const vx of dividers) {
+      ctx.beginPath();
+      ctx.moveTo(vx + 0.5, y + 38);
+      ctx.lineTo(vx + 0.5, y + panelH - 14);
+      ctx.stroke();
+    }
 
     if (ui.leaderboardLoading) {
-      ctx.fillText('Loading leaderboard…', x + 16, y + 74);
+      ctx.fillStyle = '#dce7ff';
+      ctx.fillText('Loading leaderboard…', x + 16, y + 80);
       return;
     }
     if (ui.leaderboardError) {
-      ctx.fillStyle = '#ff9c9c';
-      ctx.fillText(ui.leaderboardError, x + 16, y + 74);
+      ctx.fillStyle = '#ffb1b1';
+      ctx.fillText(ui.leaderboardError, x + 16, y + 80);
       return;
     }
 
-    let rowY = y + 74;
+    let rowY = y + 82;
     for (let i = 0; i < Math.min(12, ui.leaderboardEntries.length); i += 1) {
       const e = ui.leaderboardEntries[i];
       const sec = Math.round(e.time_spent_ms / 1000);
-      const line = `${String(i + 1).padStart(2, ' ')}  ${e.nickname.padEnd(4, ' ')}  ${String(e.score).padStart(5, ' ')}  ${String(e.flooded_pct).padStart(5, ' ')}  ${String(e.bags_used).padStart(4, ' ')}/${e.wall_budget}  ${sec}s`;
-      ctx.fillStyle = i % 2 === 0 ? '#dce7ff' : '#b9caef';
-      ctx.fillText(line, x + 16, rowY);
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.fillRect(x + 12, rowY - 14, panelW - 24, 20);
+      }
+      ctx.fillStyle = '#e5eeff';
+      ctx.font = '500 12px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(String(i + 1), x + 16, rowY);
+      ctx.fillText(e.nickname, x + 46, rowY);
+      ctx.fillText(String(e.score), x + 126, rowY);
+      ctx.fillText(`${e.flooded_pct}%`, x + 196, rowY);
+      ctx.fillText(`${e.bags_used}/${e.wall_budget}`, x + 274, rowY);
+      ctx.textAlign = 'right';
+      ctx.fillText(`${sec}s`, x + panelW - 16, rowY);
       rowY += 24;
     }
+    ctx.textAlign = 'left';
   }
 
   private drawButton(x: number, y: number, width: number, height: number, label: string, key: UiAction, fill = '#1b2538'): void {
