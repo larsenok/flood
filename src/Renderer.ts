@@ -1,6 +1,10 @@
 import type { UiAction } from './Input';
 import { DistrictType, LevelData, TileType } from './Level';
-import { LeaderboardEntry } from './Leaderboard';
+import { drawLeaderboardPanel } from './ui/drawLeaderboardPanel';
+import { drawSubmitModal } from './ui/drawSubmitModal';
+import { drawTopBar } from './ui/drawTopBar';
+import { roundRect } from './ui/roundRect';
+import type { UiState } from './ui/types';
 
 interface UiHitTarget {
   key: UiAction;
@@ -10,27 +14,7 @@ interface UiHitTarget {
   height: number;
 }
 
-export interface UiState {
-  levelLabel: string;
-  displayDate: string;
-  wallBudget: number;
-  placementsRemaining: number;
-  score: number;
-  floodedTiles: number;
-  totalTiles: number;
-  hoverX: number;
-  hoverY: number;
-  timeMs: number;
-  hasContainedArea: boolean;
-  leaderboardOpen: boolean;
-  leaderboardLoading: boolean;
-  leaderboardError: string | null;
-  leaderboardEntries: LeaderboardEntry[];
-  scoreSubmitted: boolean;
-  scoreSubmitting: boolean;
-  submitModalOpen: boolean;
-  submitNameDraft: string;
-}
+export type { UiState };
 
 export class Renderer {
   private readonly buttons = [
@@ -93,7 +77,7 @@ export class Renderer {
     this.offsetX = Math.floor((this.width - this.gridSize * level.width) * 0.5);
     this.offsetY = topBarH + Math.floor((this.height - topBarH - legendH - this.gridSize * level.height) * 0.5);
 
-    this.drawTopBar(ui);
+    drawTopBar(ctx, this.width, ui, (x, y, width, height, used, total) => this.drawSandbagBadge(x, y, width, height, used, total));
 
     for (let y = 0; y < level.height; y += 1) {
       for (let x = 0; x < level.width; x += 1) {
@@ -118,39 +102,14 @@ export class Renderer {
     this.drawButtons();
     this.drawLeaderboardToggle(ui);
     this.drawBottomActions(ui);
-    if (ui.leaderboardOpen) this.drawLeaderboardPanel(ui);
-    if (ui.submitModalOpen) this.drawSubmitModal(ui);
+    if (ui.leaderboardOpen) drawLeaderboardPanel(ctx, this.width, this.height, ui);
+    if (ui.submitModalOpen) drawSubmitModal(ctx, this.width, this.height, ui, (...args) => this.drawButton(...args));
 
     if (ui.hoverX >= 0 && !ui.submitModalOpen) {
       ctx.strokeStyle = '#f3f6ff';
       ctx.lineWidth = 2;
       ctx.strokeRect(this.offsetX + ui.hoverX * this.gridSize + 1, this.offsetY + ui.hoverY * this.gridSize + 1, this.gridSize - 2, this.gridSize - 2);
     }
-  }
-
-  private drawTopBar(ui: UiState): void {
-    const ctx = this.ctx;
-    ctx.fillStyle = '#0a1222';
-    ctx.fillRect(0, 0, this.width, 56);
-    ctx.fillStyle = '#dbe5ff';
-    ctx.font = '600 15px Inter, system-ui, sans-serif';
-    ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
-
-    const used = Math.max(0, ui.wallBudget - ui.placementsRemaining);
-    this.drawSandbagBadge(16, 30, 118, 20, used, ui.wallBudget);
-
-    ctx.fillStyle = '#dbe5ff';
-    ctx.font = '500 14px Inter, system-ui, sans-serif';
-    ctx.fillText(`Score ${ui.score}`, 150, 45);
-
-    const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
-    ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
-    ctx.fillText(`Flooded ${floodedPct}%`, 250, 45);
-
-    ctx.fillStyle = '#e6eeff';
-    ctx.font = '600 13px Inter, system-ui, sans-serif';
-    const textWidth = ctx.measureText(ui.displayDate).width;
-    ctx.fillText(ui.displayDate, this.width - textWidth - 18, 33);
   }
 
   private drawTile(type: number, x: number, y: number, size: number, flooded: boolean, isBoundary: boolean, timeMs: number): void {
@@ -332,125 +291,6 @@ export class Renderer {
     this.drawButton(this.width - 130, 76, 116, 30, label, ui.leaderboardOpen ? 'close_leaderboard' : 'toggle_leaderboard', '#24324b');
   }
 
-  private drawLeaderboardPanel(ui: UiState): void {
-    const ctx = this.ctx;
-    const panelW = Math.min(450, this.width - 140);
-    const panelH = Math.min(410, this.height - 150);
-    const x = this.width - panelW - 20;
-    const y = 112;
-    const colRank = x + 18;
-    const colWho = x + 56;
-    const colScore = x + 130;
-    const colFlood = x + 208;
-    const colBags = x + 282;
-    const colTime = x + 356;
-
-    const headerY = y + 50;
-    const bodyTop = y + 62;
-
-    ctx.fillStyle = 'rgba(34, 45, 64, 0.95)';
-    roundRect(ctx, x, y, panelW, panelH, 12);
-    ctx.fill();
-    ctx.strokeStyle = '#7f9ed1';
-    ctx.stroke();
-
-    ctx.fillStyle = '#edf3ff';
-    ctx.font = '600 16px Inter, system-ui, sans-serif';
-    ctx.fillText('Flood Leaderboard', x + 16, y + 28);
-
-    ctx.font = '600 12px Inter, system-ui, sans-serif';
-    ctx.fillText('#', colRank, headerY);
-    ctx.fillText('Who', colWho, headerY);
-    ctx.fillText('Score', colScore, headerY);
-    ctx.fillText('Flood%', colFlood, headerY);
-    ctx.fillText('Bags', colBags, headerY);
-    ctx.fillText('Time', colTime, headerY);
-
-    ctx.strokeStyle = 'rgba(170, 197, 240, 0.4)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x + 12, bodyTop);
-    ctx.lineTo(x + panelW - 12, bodyTop);
-    ctx.stroke();
-
-    const separators = [colWho - 12, colScore - 12, colFlood - 12, colBags - 12, colTime - 12];
-    for (const sx of separators) {
-      ctx.beginPath();
-      ctx.moveTo(sx, y + 38);
-      ctx.lineTo(sx, y + panelH - 14);
-      ctx.stroke();
-    }
-
-    if (ui.leaderboardLoading) {
-      ctx.fillStyle = '#dbe7ff';
-      ctx.fillText('Loading leaderboard…', x + 16, y + 86);
-      return;
-    }
-    if (ui.leaderboardError) {
-      ctx.fillStyle = '#ffb5b5';
-      ctx.fillText(ui.leaderboardError, x + 16, y + 86);
-      return;
-    }
-
-    let rowY = y + 86;
-    const maxRows = Math.min(11, ui.leaderboardEntries.length);
-    for (let i = 0; i < maxRows; i += 1) {
-      const e = ui.leaderboardEntries[i];
-      const sec = Math.round(e.time_spent_ms / 1000);
-      if (i % 2 === 0) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-        ctx.fillRect(x + 12, rowY - 14, panelW - 24, 20);
-      }
-      ctx.fillStyle = '#eaf1ff';
-      ctx.font = '500 12px Inter, system-ui, sans-serif';
-      ctx.fillText(String(i + 1), colRank, rowY);
-      ctx.fillText(e.nickname, colWho, rowY);
-      ctx.fillText(String(e.score), colScore, rowY);
-      ctx.fillText(String(e.flooded_pct), colFlood, rowY);
-      ctx.fillText(`${e.bags_used}/${e.wall_budget}`, colBags, rowY);
-      ctx.fillText(`${sec}s`, colTime, rowY);
-      rowY += 24;
-    }
-  }
-
-  private drawSubmitModal(ui: UiState): void {
-    const ctx = this.ctx;
-    const overlay = 'rgba(8, 12, 20, 0.52)';
-    const modalW = Math.min(320, this.width - 40);
-    const modalH = 168;
-    const x = (this.width - modalW) * 0.5;
-    const y = (this.height - modalH) * 0.5;
-
-    ctx.fillStyle = overlay;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    ctx.fillStyle = '#2c3f5f';
-    roundRect(ctx, x, y, modalW, modalH, 12);
-    ctx.fill();
-    ctx.strokeStyle = '#8db2e6';
-    ctx.stroke();
-
-    ctx.fillStyle = '#eff5ff';
-    ctx.font = '600 16px Inter, system-ui, sans-serif';
-    ctx.fillText('Submit score', x + 16, y + 28);
-    ctx.font = '500 13px Inter, system-ui, sans-serif';
-    ctx.fillText('Who (3 letters)', x + 16, y + 56);
-
-    ctx.fillStyle = '#122137';
-    roundRect(ctx, x + 16, y + 64, modalW - 32, 38, 8);
-    ctx.fill();
-    ctx.strokeStyle = '#5c7faf';
-    ctx.stroke();
-
-    const value = ui.submitNameDraft || '___';
-    ctx.fillStyle = '#e8f1ff';
-    ctx.font = '600 22px monospace';
-    ctx.fillText(value.padEnd(3, '_').slice(0, 3), x + 26, y + 90);
-
-    this.drawButton(x + 16, y + modalH - 48, 98, 30, 'Cancel', 'submit_score_cancel', '#37475f');
-    this.drawButton(x + modalW - 114, y + modalH - 48, 98, 30, ui.scoreSubmitting ? 'Saving…' : 'Submit', 'submit_score_confirm', '#2d6e4a');
-  }
-
   private drawButton(x: number, y: number, width: number, height: number, label: string, key: UiAction, fill = '#1b2538'): void {
     const ctx = this.ctx;
     ctx.fillStyle = fill;
@@ -463,15 +303,4 @@ export class Renderer {
     ctx.fillText(label, x + 8, y + 19);
     this.uiHitTargets.push({ key, x, y, width, height });
   }
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
-  const r = Math.min(radius, width * 0.5, height * 0.5);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
 }

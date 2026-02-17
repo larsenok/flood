@@ -4,6 +4,7 @@ import { LevelData, TileType, idx } from './Level';
 import { loadDailyLevel, loadRandomLevel } from './LevelLoader';
 import { Renderer } from './Renderer';
 import { SimResult, runSimulation } from './Simulation';
+import { handleSubmitNameKey } from './submitNameInput';
 import { formatDisplayDate, toDateKey } from './utils';
 
 interface Snapshot {
@@ -207,23 +208,17 @@ export class Game {
     if (!this.submitModalOpen) {
       return false;
     }
-    if (ev.key === 'Escape') {
+    const update = handleSubmitNameKey(ev.key, this.submitNameDraft);
+    this.submitNameDraft = update.nextDraft;
+    if (update.close) {
       this.closeSubmitModal();
       return true;
     }
-    if (ev.key === 'Enter') {
+    if (update.submit) {
       void this.handleSubmitScore();
       return true;
     }
-    if (ev.key === 'Backspace') {
-      this.submitNameDraft = this.submitNameDraft.slice(0, -1);
-      return true;
-    }
-    if (/^[a-zA-Z]$/.test(ev.key) && this.submitNameDraft.length < 3) {
-      this.submitNameDraft += ev.key.toUpperCase();
-      return true;
-    }
-    return true;
+    return update.consumed;
   }
 
   private normalizeNickname(raw: string): string {
