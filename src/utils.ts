@@ -31,6 +31,19 @@ export function toDateKey(date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+export function formatDisplayDate(dateKey: string): string {
+  const [yearRaw, monthRaw, dayRaw] = dateKey.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const year = Number.parseInt(yearRaw ?? '', 10);
+  const month = Number.parseInt(monthRaw ?? '', 10);
+  const day = Number.parseInt(dayRaw ?? '', 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day) || month < 1 || month > 12) {
+    return dateKey;
+  }
+  const threeDigitYear = String(year % 1000).padStart(3, '0');
+  return `${String(day).padStart(2, '0')}/${months[month - 1]}-${threeDigitYear}`;
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }

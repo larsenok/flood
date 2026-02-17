@@ -11,8 +11,8 @@ interface RawLevel {
 }
 
 
-export async function loadRandomLevel(seed = `random-${Date.now()}`): Promise<LevelData> {
-  return normalizeForSandbagFlow(generateLevel(seed));
+export async function loadRandomLevel(seed = toDateKey()): Promise<LevelData> {
+  return normalizeForSandbagFlow(generateLevel(`random-${seed}`));
 }
 
 export async function loadDailyLevel(dateKey = toDateKey()): Promise<LevelData> {

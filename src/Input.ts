@@ -9,11 +9,24 @@ export interface InputCallbacks {
   onUndo: () => void;
   onNewMap: () => void;
   onSubmitScore: () => void;
+  onSubmitScoreConfirm: () => void;
+  onSubmitScoreCancel: () => void;
+  onCopyScore: () => void;
   onToggleLeaderboard: () => void;
   onCloseLeaderboard: () => void;
+  onKeyDown: (ev: KeyboardEvent) => boolean;
 }
 
-export type UiAction = 'restart' | 'undo' | 'new_map' | 'submit_score' | 'toggle_leaderboard' | 'close_leaderboard';
+export type UiAction =
+  | 'restart'
+  | 'undo'
+  | 'new_map'
+  | 'submit_score'
+  | 'submit_score_confirm'
+  | 'submit_score_cancel'
+  | 'copy_score'
+  | 'toggle_leaderboard'
+  | 'close_leaderboard';
 
 export class InputController {
   state: InputState = { hoverX: -1, hoverY: -1 };
@@ -83,12 +96,18 @@ export class InputController {
     else if (action === 'undo') this.callbacks.onUndo();
     else if (action === 'new_map') this.callbacks.onNewMap();
     else if (action === 'submit_score') this.callbacks.onSubmitScore();
+    else if (action === 'submit_score_confirm') this.callbacks.onSubmitScoreConfirm();
+    else if (action === 'submit_score_cancel') this.callbacks.onSubmitScoreCancel();
+    else if (action === 'copy_score') this.callbacks.onCopyScore();
     else if (action === 'toggle_leaderboard') this.callbacks.onToggleLeaderboard();
     else if (action === 'close_leaderboard') this.callbacks.onCloseLeaderboard();
     return true;
   }
 
   private onKeyDown = (ev: KeyboardEvent): void => {
+    if (this.callbacks.onKeyDown(ev)) {
+      return;
+    }
     if (ev.key === 'r' || ev.key === 'R') {
       this.callbacks.onRestart();
       return;

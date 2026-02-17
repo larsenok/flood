@@ -4,7 +4,8 @@ import { LevelData, TileType, idx } from './Level';
 import { loadDailyLevel, loadRandomLevel } from './LevelLoader';
 import { Renderer } from './Renderer';
 import { SimResult, runSimulation } from './Simulation';
-import { toDateKey } from './utils';
+import { handleSubmitNameKey } from './submitNameInput';
+import { formatDisplayDate, toDateKey } from './utils';
 
 interface Snapshot {
   levees: Uint8Array;
@@ -29,6 +30,9 @@ export class Game {
   private leaderboardLoading = false;
   private leaderboardError: string | null = null;
   private leaderboardEntries: LeaderboardEntry[] = [];
+  private submitModalOpen = false;
+  private submitNameDraft = '';
+  private copyScoreLabel = 'Copy score';
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly renderer: Renderer) {}
 
@@ -41,9 +45,13 @@ export class Game {
         onRestart: () => this.restart(),
         onUndo: () => this.undo(),
         onNewMap: () => this.newMap(),
-        onSubmitScore: () => void this.handleSubmitScore(),
+        onSubmitScore: () => this.openSubmitModal(),
+        onSubmitScoreConfirm: () => void this.handleSubmitScore(),
+        onSubmitScoreCancel: () => this.closeSubmitModal(),
+        onCopyScore: () => void this.copySubmittedScore(),
         onToggleLeaderboard: () => void this.toggleLeaderboard(),
         onCloseLeaderboard: () => this.closeLeaderboard(),
+        onKeyDown: (ev) => this.onKeyDown(ev),
       },
       (px, py) => this.renderer.getCellAt(this.level, px, py),
       (px, py) => this.renderer.getUiActionAt(px, py),
@@ -67,7 +75,7 @@ export class Game {
   }
 
   private async newMap(): Promise<void> {
-    this.level = await loadRandomLevel();
+    this.level = await loadRandomLevel(toDateKey());
     this.resetBoardState();
     this.recompute();
   }
@@ -82,6 +90,9 @@ export class Game {
     this.scoreSubmitted = false;
     this.leaderboardOpen = false;
     this.leaderboardError = null;
+    this.submitModalOpen = false;
+    this.submitNameDraft = '';
+    this.copyScoreLabel = 'Copy score';
   }
 
   private applyHashState(): void {
@@ -107,6 +118,9 @@ export class Game {
     this.history = [];
     this.firstPlacementAtMs = null;
     this.scoreSubmitted = false;
+    this.submitModalOpen = false;
+    this.submitNameDraft = '';
+    this.copyScoreLabel = 'Copy score';
     this.recompute();
   }
 
@@ -131,6 +145,7 @@ export class Game {
   }
 
   private toggleLevee(x: number, y: number): void {
+    if (this.submitModalOpen) return;
     const i = idx(x, y, this.level.width);
     if (!this.canPlaceAtIndex(i)) return;
     const placed = this.countPlaced();
@@ -149,17 +164,26 @@ export class Game {
     this.recompute();
   }
 
-  private async handleSubmitScore(): Promise<void> {
+  private openSubmitModal(): void {
     if (!this.sim.hasContainedArea || this.scoreSubmitting || this.scoreSubmitted) return;
-    const nicknameInput = window.prompt('Enter 3-letter nickname (blank = ANON):', '');
-    const nickname = this.normalizeNickname(nicknameInput ?? '');
+    this.submitNameDraft = this.submitNameDraft.slice(0, 3);
+    this.submitModalOpen = true;
+  }
+
+  private closeSubmitModal(): void {
+    this.submitModalOpen = false;
+  }
+
+  private async handleSubmitScore(): Promise<void> {
+    if (!this.submitModalOpen || !this.sim.hasContainedArea || this.scoreSubmitting || this.scoreSubmitted) return;
+    const nickname = this.normalizeNickname(this.submitNameDraft);
     this.scoreSubmitting = true;
     this.leaderboardError = null;
     try {
       const bagsUsed = this.countPlaced();
       const floodedTiles = this.countFlooded(this.sim.flooded);
       const totalTiles = this.level.width * this.level.height;
-      const floodedPct = Math.round((floodedTiles / Math.max(1, totalTiles)) * 100);
+      const floodedPct = this.getFloodedPct(this.sim.flooded);
       const elapsedMs = this.firstPlacementAtMs === null ? 0 : Math.max(0, Math.round(performance.now() - this.firstPlacementAtMs));
       await submitScore({
         nickname,
@@ -174,6 +198,8 @@ export class Game {
         time_spent_ms: elapsedMs,
       });
       this.scoreSubmitted = true;
+      this.copyScoreLabel = 'Copy score';
+      this.submitModalOpen = false;
       await this.loadLeaderboard();
       this.leaderboardOpen = true;
     } catch (err) {
@@ -183,9 +209,58 @@ export class Game {
     }
   }
 
+  private onKeyDown(ev: KeyboardEvent): boolean {
+    if (!this.submitModalOpen) {
+      return false;
+    }
+    const update = handleSubmitNameKey(ev.key, this.submitNameDraft);
+    this.submitNameDraft = update.nextDraft;
+    if (update.close) {
+      this.closeSubmitModal();
+      return true;
+    }
+    if (update.submit) {
+      void this.handleSubmitScore();
+      return true;
+    }
+    return update.consumed;
+  }
+
   private normalizeNickname(raw: string): string {
     const cleaned = raw.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
     return cleaned.length > 0 ? cleaned.padEnd(3, 'X') : 'ANON';
+  }
+
+  private async copySubmittedScore(): Promise<void> {
+    if (!this.scoreSubmitted) return;
+    const floodedPct = this.getFloodedPct(this.sim.flooded);
+    const shareText = `${floodedPct}% flooded · ${this.getFloodHypeText(floodedPct)}
+${window.location.href}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareText);
+      } else {
+        throw new Error('clipboard unavailable');
+      }
+      this.copyScoreLabel = 'Copied!';
+    } catch {
+      this.copyScoreLabel = 'Copy failed';
+    }
+  }
+
+  private getFloodedPct(cells: Uint8Array): number {
+    const floodedTiles = this.countFlooded(cells);
+    const totalTiles = this.level.width * this.level.height;
+    return Math.round((floodedTiles / Math.max(1, totalTiles)) * 100);
+  }
+
+  private getFloodHypeText(floodedPct: number): string {
+    if (floodedPct <= 12) return 'Legendary flood shutdown!';
+    if (floodedPct <= 25) return 'Elite barrier run!';
+    if (floodedPct <= 40) return 'Strong defenses, keep pushing!';
+    if (floodedPct <= 60) return 'Solid attempt, more wall tech next run!';
+    if (floodedPct <= 80) return 'Chaotic waters, clutch up next game!';
+    return 'The flood won this one—run it back!';
   }
 
   private async toggleLeaderboard(): Promise<void> {
@@ -201,7 +276,7 @@ export class Game {
     this.leaderboardLoading = true;
     this.leaderboardError = null;
     try {
-      this.leaderboardEntries = await fetchLeaderboard();
+      this.leaderboardEntries = await fetchLeaderboard(this.level.date);
     } catch (err) {
       this.leaderboardError = err instanceof Error ? err.message : 'Failed to load leaderboard';
     } finally {
@@ -245,6 +320,7 @@ export class Game {
     const animatedFlooded = this.getAnimatedFlooded(now);
     this.renderer.render(this.level, this.levees, this.leveePlacedAtMs, animatedFlooded, {
       levelLabel: this.level.date,
+      displayDate: formatDisplayDate(this.level.date),
       wallBudget: this.level.wallBudget,
       placementsRemaining: this.level.wallBudget - this.countPlaced(),
       score: this.sim.score,
@@ -260,6 +336,9 @@ export class Game {
       leaderboardEntries: this.leaderboardEntries,
       scoreSubmitted: this.scoreSubmitted,
       scoreSubmitting: this.scoreSubmitting,
+      copyScoreLabel: this.copyScoreLabel,
+      submitModalOpen: this.submitModalOpen,
+      submitNameDraft: this.submitNameDraft,
     });
     this.raf = requestAnimationFrame(this.tick);
   };

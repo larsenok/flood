@@ -1,6 +1,10 @@
 import type { UiAction } from './Input';
 import { DistrictType, LevelData, TileType } from './Level';
-import { LeaderboardEntry } from './Leaderboard';
+import { drawLeaderboardPanel } from './ui/drawLeaderboardPanel';
+import { drawSubmitModal } from './ui/drawSubmitModal';
+import { drawTopBar } from './ui/drawTopBar';
+import { roundRect } from './ui/roundRect';
+import type { UiState } from './ui/types';
 
 interface UiHitTarget {
   key: UiAction;
@@ -10,24 +14,7 @@ interface UiHitTarget {
   height: number;
 }
 
-export interface UiState {
-  levelLabel: string;
-  wallBudget: number;
-  placementsRemaining: number;
-  score: number;
-  floodedTiles: number;
-  totalTiles: number;
-  hoverX: number;
-  hoverY: number;
-  timeMs: number;
-  hasContainedArea: boolean;
-  leaderboardOpen: boolean;
-  leaderboardLoading: boolean;
-  leaderboardError: string | null;
-  leaderboardEntries: LeaderboardEntry[];
-  scoreSubmitted: boolean;
-  scoreSubmitting: boolean;
-}
+export type { UiState };
 
 export class Renderer {
   private readonly buttons = [
@@ -90,7 +77,7 @@ export class Renderer {
     this.offsetX = Math.floor((this.width - this.gridSize * level.width) * 0.5);
     this.offsetY = topBarH + Math.floor((this.height - topBarH - legendH - this.gridSize * level.height) * 0.5);
 
-    this.drawTopBar(ui);
+    drawTopBar(ctx, this.width, ui, (x, y, width, height, used, total) => this.drawSandbagBadge(x, y, width, height, used, total));
 
     for (let y = 0; y < level.height; y += 1) {
       for (let x = 0; x < level.width; x += 1) {
@@ -115,33 +102,14 @@ export class Renderer {
     this.drawButtons();
     this.drawLeaderboardToggle(ui);
     this.drawBottomActions(ui);
-    if (ui.leaderboardOpen) this.drawLeaderboardPanel(ui);
+    if (ui.leaderboardOpen) drawLeaderboardPanel(ctx, this.width, this.height, ui);
+    if (ui.submitModalOpen) drawSubmitModal(ctx, this.width, this.height, ui, (...args) => this.drawButton(...args));
 
-    if (ui.hoverX >= 0) {
+    if (ui.hoverX >= 0 && !ui.submitModalOpen) {
       ctx.strokeStyle = '#f3f6ff';
       ctx.lineWidth = 2;
       ctx.strokeRect(this.offsetX + ui.hoverX * this.gridSize + 1, this.offsetY + ui.hoverY * this.gridSize + 1, this.gridSize - 2, this.gridSize - 2);
     }
-  }
-
-  private drawTopBar(ui: UiState): void {
-    const ctx = this.ctx;
-    ctx.fillStyle = '#0a1222';
-    ctx.fillRect(0, 0, this.width, 56);
-    ctx.fillStyle = '#dbe5ff';
-    ctx.font = '600 15px Inter, system-ui, sans-serif';
-    ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
-
-    const used = Math.max(0, ui.wallBudget - ui.placementsRemaining);
-    this.drawSandbagBadge(16, 30, 118, 20, used, ui.wallBudget);
-
-    ctx.fillStyle = '#dbe5ff';
-    ctx.font = '500 14px Inter, system-ui, sans-serif';
-    ctx.fillText(`Score ${ui.score}`, 150, 45);
-
-    const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
-    ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
-    ctx.fillText(`Flooded ${floodedPct}%`, 250, 45);
   }
 
   private drawTile(type: number, x: number, y: number, size: number, flooded: boolean, isBoundary: boolean, timeMs: number): void {
@@ -313,52 +281,34 @@ export class Renderer {
 
   private drawBottomActions(ui: UiState): void {
     if (!ui.hasContainedArea) return;
-    const label = ui.scoreSubmitting ? 'Submitting…' : ui.scoreSubmitted ? 'Score submitted' : 'Submit score';
-    this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, ui.scoreSubmitted ? 'toggle_leaderboard' : 'submit_score', ui.scoreSubmitted ? '#28426c' : '#2b5f3e');
+    if (!ui.scoreSubmitted) {
+      const label = ui.scoreSubmitting ? 'Submitting…' : 'Submit score';
+      this.drawButton(this.width * 0.5 - 84, this.height - 54, 168, 34, label, 'submit_score', '#2b5f3e');
+      return;
+    }
+
+    const baseY = this.height - 54;
+    const statusX = this.width * 0.5 - 152;
+    const statusW = 170;
+    this.drawStatusChip(statusX, baseY, statusW, 34, 'Score submitted');
+    this.drawButton(statusX + statusW + 10, baseY, 124, 34, ui.copyScoreLabel, 'copy_score', '#345f87');
+  }
+
+  private drawStatusChip(x: number, y: number, width: number, height: number, label: string): void {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#28426c';
+    roundRect(ctx, x, y, width, height, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#3f5f8d';
+    ctx.stroke();
+    ctx.fillStyle = '#dce7ff';
+    ctx.font = '500 12px Inter, system-ui, sans-serif';
+    ctx.fillText(label, x + 10, y + 20);
   }
 
   private drawLeaderboardToggle(ui: UiState): void {
     const label = ui.leaderboardOpen ? 'Close board' : 'Leaderboard';
     this.drawButton(this.width - 130, 76, 116, 30, label, ui.leaderboardOpen ? 'close_leaderboard' : 'toggle_leaderboard', '#24324b');
-  }
-
-  private drawLeaderboardPanel(ui: UiState): void {
-    const ctx = this.ctx;
-    const panelW = Math.min(520, this.width - 120);
-    const panelH = Math.min(420, this.height - 140);
-    const x = this.width - panelW - 20;
-    const y = 112;
-    ctx.fillStyle = 'rgba(8, 12, 20, 0.94)';
-    roundRect(ctx, x, y, panelW, panelH, 14);
-    ctx.fill();
-    ctx.strokeStyle = '#39527c';
-    ctx.stroke();
-
-    ctx.fillStyle = '#dce7ff';
-    ctx.font = '600 16px Inter, system-ui, sans-serif';
-    ctx.fillText('Flood Leaderboard', x + 16, y + 28);
-    ctx.font = '500 12px Inter, system-ui, sans-serif';
-    ctx.fillText('#  Nick  Score  Flood%  Bags  Time', x + 16, y + 48);
-
-    if (ui.leaderboardLoading) {
-      ctx.fillText('Loading leaderboard…', x + 16, y + 74);
-      return;
-    }
-    if (ui.leaderboardError) {
-      ctx.fillStyle = '#ff9c9c';
-      ctx.fillText(ui.leaderboardError, x + 16, y + 74);
-      return;
-    }
-
-    let rowY = y + 74;
-    for (let i = 0; i < Math.min(12, ui.leaderboardEntries.length); i += 1) {
-      const e = ui.leaderboardEntries[i];
-      const sec = Math.round(e.time_spent_ms / 1000);
-      const line = `${String(i + 1).padStart(2, ' ')}  ${e.nickname.padEnd(4, ' ')}  ${String(e.score).padStart(5, ' ')}  ${String(e.flooded_pct).padStart(5, ' ')}  ${String(e.bags_used).padStart(4, ' ')}/${e.wall_budget}  ${sec}s`;
-      ctx.fillStyle = i % 2 === 0 ? '#dce7ff' : '#b9caef';
-      ctx.fillText(line, x + 16, rowY);
-      rowY += 24;
-    }
   }
 
   private drawButton(x: number, y: number, width: number, height: number, label: string, key: UiAction, fill = '#1b2538'): void {
@@ -373,15 +323,4 @@ export class Renderer {
     ctx.fillText(label, x + 8, y + 19);
     this.uiHitTargets.push({ key, x, y, width, height });
   }
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
-  const r = Math.min(radius, width * 0.5, height * 0.5);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
 }
