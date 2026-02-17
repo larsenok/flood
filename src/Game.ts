@@ -1,7 +1,7 @@
 import { InputController } from './Input';
 import { fetchLeaderboard, LeaderboardEntry, submitScore } from './Leaderboard';
 import { LevelData, TileType, idx } from './Level';
-import { loadDailyLevel, loadRandomLevel } from './LevelLoader';
+import { loadDailyLevel } from './LevelLoader';
 import { Renderer } from './Renderer';
 import { SimResult, runSimulation } from './Simulation';
 import { formatDisplayDate, toDateKey } from './utils';
@@ -44,7 +44,6 @@ export class Game {
         onCellPrimary: (x, y) => this.toggleLevee(x, y),
         onRestart: () => this.restart(),
         onUndo: () => this.undo(),
-        onNewMap: () => this.newMap(),
         onSubmitScore: () => void this.handleSubmitScore(),
         onCopyScore: () => void this.handleCopyScore(),
         onToggleLeaderboard: () => void this.toggleLeaderboard(),
@@ -72,11 +71,6 @@ export class Game {
     this.recompute();
   }
 
-  private async newMap(): Promise<void> {
-    this.level = await loadRandomLevel(`random-${toDateKey()}`);
-    this.resetBoardState();
-    this.recompute();
-  }
 
   private resetBoardState(): void {
     this.levees = new Uint8Array(this.level.width * this.level.height);
@@ -338,17 +332,12 @@ export class Game {
   }
 
   private buildScoreShareText(floodedPct: number): string {
-    const hype = floodedPct <= 20
-      ? 'Absolute flood-stop legend.'
-      : floodedPct <= 40
-      ? 'Strong defense. Water got cooked.'
-      : floodedPct <= 60
-      ? 'Solid run—can you push it lower?'
-      : floodedPct <= 80
-      ? 'Chaos run. Still room to clutch it.'
-      : 'Full disaster mode. Redemption arc next run.';
-    return `Flood ${floodedPct}% (lower is better)\n${window.location.href}\n${hype}`;
+    const shareUrl = `${window.location.origin}${window.location.pathname}#${this.level.date}|`;
+    return `Flood ${floodedPct}% (low = good)
+:${shareUrl}
+Solid run—can you push it lower?`;
   }
+
   private async toggleLeaderboard(): Promise<void> {
     this.leaderboardOpen = !this.leaderboardOpen;
     if (this.leaderboardOpen && this.leaderboardEntries.length === 0) await this.loadLeaderboard();

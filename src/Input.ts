@@ -7,14 +7,13 @@ export interface InputCallbacks {
   onCellPrimary: (x: number, y: number) => void;
   onRestart: () => void;
   onUndo: () => void;
-  onNewMap: () => void;
   onSubmitScore: () => void;
   onCopyScore: () => void;
   onToggleLeaderboard: () => void;
   onCloseLeaderboard: () => void;
 }
 
-export type UiAction = 'restart' | 'undo' | 'new_map' | 'submit_score' | 'copy_score' | 'toggle_leaderboard' | 'close_leaderboard';
+export type UiAction = 'restart' | 'undo' | 'submit_score' | 'copy_score' | 'toggle_leaderboard' | 'close_leaderboard';
 
 export class InputController {
   state: InputState = { hoverX: -1, hoverY: -1 };
@@ -82,7 +81,6 @@ export class InputController {
     }
     if (action === 'restart') this.callbacks.onRestart();
     else if (action === 'undo') this.callbacks.onUndo();
-    else if (action === 'new_map') this.callbacks.onNewMap();
     else if (action === 'submit_score') this.callbacks.onSubmitScore();
     else if (action === 'copy_score') this.callbacks.onCopyScore();
     else if (action === 'toggle_leaderboard') this.callbacks.onToggleLeaderboard();
@@ -97,10 +95,6 @@ export class InputController {
     }
     if (ev.key === 'z' || ev.key === 'Z') {
       this.callbacks.onUndo();
-      return;
-    }
-    if (ev.key === 'n' || ev.key === 'N') {
-      this.callbacks.onNewMap();
       return;
     }
     if (ev.key === 'l' || ev.key === 'L') {
