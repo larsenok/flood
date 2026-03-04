@@ -34,8 +34,8 @@ export interface UiState {
 
 export class Renderer {
   private readonly buttons = [
-    { key: 'restart', label: 'Restart (R)' },
-    { key: 'undo', label: 'Undo (Z)' },
+    { key: 'restart', label: 'Restart' },
+    { key: 'undo', label: 'Undo' },
   ] as const;
   private readonly ctx: CanvasRenderingContext2D;
   private dpr = 1;
@@ -83,10 +83,10 @@ export class Renderer {
     ctx.fillStyle = '#87b678';
     ctx.fillRect(0, 0, this.width, this.height);
 
-    const topBarH = ui.isNarrowScreen ? 76 : 56;
+    const topBarH = ui.isNarrowScreen ? 94 : 58;
     const boardToggleY = ui.isNarrowScreen ? topBarH + 8 : 76;
-    const padX = ui.isNarrowScreen ? 10 : 24;
-    const padBottom = ui.isNarrowScreen ? 76 : 24;
+    const padX = ui.isNarrowScreen ? 6 : 14;
+    const padBottom = ui.isNarrowScreen ? 68 : 18;
     const availableW = this.width - padX * 2;
     const availableH = this.height - topBarH - padBottom;
     this.gridSize = Math.floor(Math.min(availableW / level.width, availableH / level.height));
@@ -100,8 +100,7 @@ export class Renderer {
         const i = y * level.width + x;
         const px = this.offsetX + x * this.gridSize;
         const py = this.offsetY + y * this.gridSize;
-        const isBoundary = x === 0 || y === 0 || x === level.width - 1 || y === level.height - 1;
-        this.drawTile(level.tiles[i], px, py, this.gridSize, flooded[i] === 1, isBoundary, ui.timeMs);
+        this.drawTile(level.tiles[i], px, py, this.gridSize, flooded[i] === 1, ui.timeMs);
         if (levees[i] === 1) this.drawLevee(px, py, this.gridSize, ui.timeMs, leveePlacedAtMs[i]);
       }
     }
@@ -110,7 +109,7 @@ export class Renderer {
       const d = level.districts[i];
       const px = this.offsetX + d.x * this.gridSize;
       const py = this.offsetY + d.y * this.gridSize;
-      this.drawDistrict(d.type, px, py, this.gridSize, flooded[d.y * level.width + d.x] === 1);
+      this.drawDistrict(d.type, px, py, this.gridSize, flooded[d.y * level.width + d.x] === 1, ui.timeMs);
     }
 
     this.drawGrid(level);
@@ -128,39 +127,66 @@ export class Renderer {
 
   private drawTopBar(ui: UiState): void {
     const ctx = this.ctx;
-    const topBarHeight = ui.isNarrowScreen ? 76 : 56;
+    const topBarHeight = ui.isNarrowScreen ? 94 : 58;
     ctx.fillStyle = '#0a1222';
     ctx.fillRect(0, 0, this.width, topBarHeight);
     ctx.fillStyle = '#dbe5ff';
     ctx.font = '600 15px Inter, system-ui, sans-serif';
-    ctx.fillText(`Level ${ui.levelLabel}`, 16, 23);
+    ctx.fillText(`Level ${ui.levelLabel}`, 16, 22);
 
     ctx.textAlign = 'right';
     ctx.fillStyle = '#b9caef';
     ctx.font = '600 13px Inter, system-ui, sans-serif';
-    ctx.fillText(ui.displayDateLabel, this.width - 16, 23);
+    ctx.fillText(ui.displayDateLabel, this.width - 16, 22);
     ctx.textAlign = 'left';
 
     const used = Math.max(0, ui.wallBudget - ui.placementsRemaining);
-    this.drawSandbagBadge(16, 30, 118, 20, used, ui.wallBudget);
+    this.drawSandbagBadge(16, ui.isNarrowScreen ? 34 : 30, 118, 20, used, ui.wallBudget);
 
     ctx.fillStyle = '#dbe5ff';
     ctx.font = '500 14px Inter, system-ui, sans-serif';
-    const statsY = ui.isNarrowScreen ? 66 : 45;
-    ctx.fillText(`Score ${ui.score}`, 150, statsY);
+    const scoreX = ui.isNarrowScreen ? 16 : 150;
+    const floodX = ui.isNarrowScreen ? 128 : 250;
+    const statsY = ui.isNarrowScreen ? 84 : 45;
+    ctx.fillText(`Score ${ui.score}`, scoreX, statsY);
 
     const floodedPct = Math.round((ui.floodedTiles / Math.max(1, ui.totalTiles)) * 100);
     ctx.fillStyle = floodedPct < 45 ? '#6de8a5' : floodedPct < 70 ? '#ffd978' : '#ff8d7e';
-    ctx.fillText(`Flooded ${floodedPct}%`, ui.isNarrowScreen ? 238 : 250, statsY);
+    ctx.fillText(`Flooded ${floodedPct}%`, floodX, statsY);
   }
 
-  private drawTile(type: number, x: number, y: number, size: number, flooded: boolean, isBoundary: boolean, timeMs: number): void {
+  private drawTile(type: number, x: number, y: number, size: number, flooded: boolean, timeMs: number): void {
     const ctx = this.ctx;
     ctx.fillStyle = type === TileType.ROCK ? '#51586a' : type === TileType.WATER ? '#1e66d6' : type === TileType.OUTFLOW ? '#0c3c83' : '#87b678';
     ctx.fillRect(x, y, size, size);
-    if (isBoundary && type === TileType.LAND && !flooded) {
-      ctx.fillStyle = 'rgba(255, 250, 200, 0.16)';
-      ctx.fillRect(x, y, size, size);
+    if (type === TileType.ROCK) {
+      const variant = (Math.floor(x / size) * 3 + Math.floor(y / size) * 5) % 3;
+      ctx.strokeStyle = 'rgba(232, 236, 246, 0.42)';
+      ctx.lineWidth = 1.2;
+      if (variant === 0) {
+        ctx.beginPath();
+        ctx.moveTo(x + size * 0.18, y + size * 0.76);
+        ctx.lineTo(x + size * 0.42, y + size * 0.28);
+        ctx.lineTo(x + size * 0.64, y + size * 0.62);
+        ctx.lineTo(x + size * 0.82, y + size * 0.38);
+        ctx.stroke();
+      } else if (variant === 1) {
+        ctx.beginPath();
+        ctx.moveTo(x + size * 0.16, y + size * 0.72);
+        ctx.lineTo(x + size * 0.3, y + size * 0.48);
+        ctx.lineTo(x + size * 0.5, y + size * 0.24);
+        ctx.lineTo(x + size * 0.7, y + size * 0.5);
+        ctx.lineTo(x + size * 0.84, y + size * 0.34);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(x + size * 0.18, y + size * 0.68);
+        ctx.lineTo(x + size * 0.35, y + size * 0.44);
+        ctx.lineTo(x + size * 0.46, y + size * 0.56);
+        ctx.lineTo(x + size * 0.6, y + size * 0.3);
+        ctx.lineTo(x + size * 0.8, y + size * 0.66);
+        ctx.stroke();
+      }
     }
     if (flooded && type !== TileType.ROCK) {
       const phase = timeMs * 0.0064 + x * 0.13 + y * 0.09;
@@ -196,7 +222,7 @@ export class Renderer {
     const spawnAnim = ageMs === Number.POSITIVE_INFINITY ? 1 : Math.min(1, ageMs / 520);
     const dropEase = 1 - Math.pow(1 - spawnAnim, 3);
     const bounce = Math.exp(-7 * spawnAnim) * Math.sin(spawnAnim * 16);
-    const dropOffset = (1 - dropEase) * -size * 0.95;
+    const dropOffset = (1 - dropEase) * -size * 0.475;
     const settleLift = bounce * size * 0.1;
     const w = size * 0.94 * (1 + Math.max(0, bounce) * 0.06);
     const h = size * 0.54 * (1 - Math.max(0, bounce) * 0.08);
@@ -242,12 +268,14 @@ export class Renderer {
     ctx.fillText(`${used}/${total}`, x + 34, y + 14);
   }
 
-  private drawDistrict(type: DistrictType, x: number, y: number, size: number, flooded: boolean): void {
+  private drawDistrict(type: DistrictType, x: number, y: number, size: number, flooded: boolean, timeMs: number): void {
     const ctx = this.ctx;
     ctx.save();
     ctx.translate(x + size * 0.5, y + size * 0.5);
     ctx.globalAlpha = flooded ? 0.72 : 1;
     if (type === 'HOME') {
+      const bob = Math.sin(timeMs * 0.006 + x * 0.07 + y * 0.04) * size * 0.06;
+      ctx.translate(0, bob);
       ctx.fillStyle = '#fff5e7';
       ctx.fillRect(-size * 0.18, -size * 0.05, size * 0.36, size * 0.24);
       ctx.fillStyle = '#df5a5a';
@@ -256,6 +284,15 @@ export class Renderer {
       ctx.lineTo(0, -size * 0.24);
       ctx.lineTo(size * 0.22, -size * 0.05);
       ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#b78251';
+      ctx.fillRect(size * 0.06, -size * 0.19, size * 0.08, size * 0.13);
+      const smokeWobble = Math.sin(timeMs * 0.004 + x * 0.11) * size * 0.015;
+      ctx.fillStyle = 'rgba(235, 238, 246, 0.76)';
+      ctx.beginPath();
+      ctx.arc(size * 0.13 + smokeWobble, -size * 0.26, size * 0.05, 0, Math.PI * 2);
+      ctx.arc(size * 0.09 + smokeWobble * 0.7, -size * 0.32, size * 0.04, 0, Math.PI * 2);
       ctx.fill();
     } else if (type === 'HOSPITAL') {
       ctx.fillStyle = '#eef5ff';
@@ -274,7 +311,7 @@ export class Renderer {
 
   private drawGrid(level: LevelData): void {
     const ctx = this.ctx;
-    ctx.strokeStyle = 'rgba(6, 10, 16, 0.45)';
+    ctx.strokeStyle = 'rgba(78, 132, 83, 0.4)';
     ctx.lineWidth = 1;
     for (let x = 0; x <= level.width; x += 1) {
       const px = this.offsetX + x * this.gridSize + 0.5;
@@ -295,13 +332,11 @@ export class Renderer {
 
 
   private drawButtons(ui: UiState): void {
-    const buttonWidth = ui.isNarrowScreen ? 92 : 110;
+    const buttonWidth = ui.isNarrowScreen ? 88 : 104;
     const buttonGap = ui.isNarrowScreen ? 6 : 8;
-    const buttonHeight = ui.isNarrowScreen ? 28 : 30;
-    const totalWidth = this.buttons.length * buttonWidth + (this.buttons.length - 1) * buttonGap;
-    let x = this.width - totalWidth - 12;
-    if (ui.isNarrowScreen) x = Math.max(x, 10);
-    const buttonY = ui.isNarrowScreen ? 84 : 12;
+    const buttonHeight = ui.isNarrowScreen ? 30 : 32;
+    let x = 12;
+    const buttonY = 12;
     for (let i = 0; i < this.buttons.length; i += 1) {
       this.drawButton(x, buttonY, buttonWidth, buttonHeight, this.buttons[i].label, this.buttons[i].key);
       x += buttonWidth + buttonGap;
@@ -417,14 +452,14 @@ export class Renderer {
     ctx.textAlign = 'left';
   }
 
-  private drawButton(x: number, y: number, width: number, height: number, label: string, key: UiAction, fill = '#1b2538'): void {
+  private drawButton(x: number, y: number, width: number, height: number, label: string, key: UiAction, fill = '#3a62aa'): void {
     const ctx = this.ctx;
     ctx.fillStyle = fill;
-    roundRect(ctx, x, y, width, height, 8);
+    roundRect(ctx, x, y, width, height, 10);
     ctx.fill();
-    ctx.strokeStyle = '#2f4263';
+    ctx.strokeStyle = 'rgba(235, 247, 255, 0.55)';
     ctx.stroke();
-    ctx.fillStyle = '#dce7ff';
+    ctx.fillStyle = '#f4f8ff';
     ctx.font = '500 12px Inter, system-ui, sans-serif';
     ctx.fillText(label, x + 8, y + 19);
     this.uiHitTargets.push({ key, x, y, width, height });
