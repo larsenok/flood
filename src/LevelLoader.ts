@@ -12,7 +12,7 @@ interface RawLevel {
 
 
 export async function loadRandomLevel(seed = `random-${toDateKey()}`): Promise<LevelData> {
-  return normalizeForSandbagFlow(generateLevel(seed));
+  return standardizeLevel(normalizeForSandbagFlow(generateLevel(seed)));
 }
 
 export async function loadDailyLevel(dateKey = toDateKey()): Promise<LevelData> {
@@ -20,14 +20,31 @@ export async function loadDailyLevel(dateKey = toDateKey()): Promise<LevelData> 
     const response = await fetch(`/levels/${dateKey}.json`);
     if (response.ok) {
       const raw = (await response.json()) as RawLevel;
-      const parsed = normalizeForSandbagFlow(parseLevel(raw, dateKey));
+      const parsed = standardizeLevel(normalizeForSandbagFlow(parseLevel(raw, dateKey)));
       return { ...parsed, wallBudget: sandbagBudgetForDate(dateKey) };
     }
   } catch {
     // fallback to generator
   }
-  const generated = normalizeForSandbagFlow(generateLevel(dateKey));
+  const generated = standardizeLevel(normalizeForSandbagFlow(generateLevel(dateKey)));
   return { ...generated, wallBudget: sandbagBudgetForDate(dateKey) };
+}
+
+function standardizeLevel(level: LevelData): LevelData {
+  if (level.width <= 14) return level;
+  const cropPerSide = 1;
+  const width = level.width - cropPerSide * 2;
+  const height = level.height;
+  const tiles = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      tiles[y * width + x] = level.tiles[y * level.width + (x + cropPerSide)];
+    }
+  }
+  const districts = level.districts
+    .map((d) => ({ ...d, x: d.x - cropPerSide }))
+    .filter((d) => d.x >= 0 && d.x < width);
+  return { ...level, width, height, tiles, districts };
 }
 
 function normalizeForSandbagFlow(level: LevelData): LevelData {
@@ -50,7 +67,7 @@ function sandbagBudgetForDate(dateKey: string): number {
 }
 
 function generateLevel(dateKey: string): LevelData {
-  const width = 16;
+  const width = 14;
   const height = 16;
   const total = width * height;
   const rng = new SeededRng(hashStringToInt(dateKey));
