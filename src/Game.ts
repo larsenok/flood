@@ -237,7 +237,8 @@ export class Game {
     input.style.border = '1px solid #314766';
     input.style.background = '#0d1a2f';
     input.style.color = '#dce7ff';
-    input.style.font = '600 14px Inter, system-ui, sans-serif';
+    // Keep iOS/Android from auto-zooming when the field receives focus.
+    input.style.font = '600 16px Inter, system-ui, sans-serif';
     input.style.appearance = 'none';
 
     const actions = document.createElement('div');
@@ -283,6 +284,7 @@ export class Game {
         if (finished) return;
         finished = true;
         document.removeEventListener('keydown', onKeyDown);
+        input.blur();
         this.removeNicknameDialog();
         resolve(value);
       };
